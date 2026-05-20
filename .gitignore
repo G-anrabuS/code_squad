@@ -1,0 +1,75 @@
+*.pdf
+*.docx
+
+# =========================
+# Python / FastAPI
+# =========================
+fastapi_backend/venv/
+fastapi_backend/__pycache__/
+fastapi_backend/**/*.pyc
+fastapi_backend/.env
+fastapi_backend/.pytest_cache/
+fastapi_backend/.mypy_cache/
+
+# SQLite
+fastapi_backend/*.db
+fastapi_backend/*.sqlite3
+
+# temp cloned repos
+fastapi_backend/temp_repos/
+fastapi_backend/tmp/
+
+# logs
+fastapi_backend/*.log
+
+# =========================
+# Flutter
+# =========================
+flutter_frontend/.dart_tool/
+flutter_frontend/.packages
+flutter_frontend/.flutter-plugins
+flutter_frontend/.flutter-plugins-dependencies
+flutter_frontend/.metadata
+
+flutter_frontend/build/
+flutter_frontend/.idea/
+
+# Android
+flutter_frontend/android/.gradle/
+flutter_frontend/android/app/debug/
+flutter_frontend/android/app/profile/
+flutter_frontend/android/app/release/
+
+# iOS (if ever)
+flutter_frontend/ios/Pods/
+flutter_frontend/ios/.symlinks/
+flutter_frontend/ios/Flutter/
+
+# Web generated
+flutter_frontend/web/flutter_service_worker.js
+flutter_frontend/web/version.json
+
+# =========================
+# IDE
+# =========================
+.vscode/
+.idea/
+
+# =========================
+# OS junk
+# =========================
+.DS_Store
+Thumbs.db
+
+# =========================
+# Secrets
+# =========================
+.env
+*.pem
+*.key
+
+# =========================
+# Misc
+# =========================
+coverage/
+dist/
