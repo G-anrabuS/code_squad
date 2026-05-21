@@ -7,14 +7,14 @@ from app.core.config import JWT_SECRET
 app = FastAPI(
     title="CodeSquad API",
     description="AI-powered codebase analysis system",
-    version="1.0.0"
+    version="1.0.0",
 )
 
 app.add_middleware(
     CORSMiddleware,
     allow_origins=[
         "http://localhost:8080",
-        "https://codesquad-88e63.web.app/",
+        "https://codesquad-88e63.web.app",
         "http://localhost:3000",
     ],
     allow_credentials=True,
@@ -30,6 +30,7 @@ app.include_router(repos.router, prefix="/user")
 app.include_router(scan.router, prefix="/scan")
 app.include_router(analysis.router, prefix="/analysis")
 
+
 @app.get("/")
 async def root():
     """Root endpoint."""
@@ -41,6 +42,6 @@ async def root():
             "/analysis/analyze - POST",
             "/analysis/analyze/background - POST",
             "/analysis/result/{task_id} - GET",
-            "/analysis/summary/{task_id} - GET"
-        ]
+            "/analysis/summary/{task_id} - GET",
+        ],
     }
