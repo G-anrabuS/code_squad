@@ -11,6 +11,8 @@ IGNORE_DIRS = {
     "coverage",
     ".dart_tool",
     ".gradle",
+    "migrations",
+    "tests",
 }
 
 IGNORE_FILES = {
@@ -19,6 +21,7 @@ IGNORE_FILES = {
     "pnpm-lock.yaml",
     "poetry.lock",
     "pubspec.lock",
+    "__init__.py",
 }
 
 ALLOWED_EXTENSIONS = {
