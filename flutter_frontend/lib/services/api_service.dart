@@ -30,9 +30,9 @@ class ApiService {
     return (response.data as List).map((e) => RepoModel.fromJson(e)).toList();
   }
 
-  Future<List<String>> getBranches(String repoName) async {
+  Future<List<String>> getBranches(String fullRepoName) async {
     final response = await _dio.get(
-      "/user/branches/$repoName",
+      "/user/branches/$fullRepoName",
       options: await _authOptions(),
     );
 

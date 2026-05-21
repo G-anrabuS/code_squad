@@ -80,7 +80,8 @@ class _RepoScreenState extends State<RepoScreen> {
                         Navigator.push(
                           context,
                           MaterialPageRoute(
-                            builder: (_) => BranchScreen(repoName: repo.name),
+                            builder: (_) =>
+                                BranchScreen(repoName: repo.fullName),
                           ),
                         );
                       },
