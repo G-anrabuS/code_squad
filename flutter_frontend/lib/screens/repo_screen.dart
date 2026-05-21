@@ -2,6 +2,8 @@ import 'package:flutter/material.dart';
 import '../services/api_service.dart';
 import 'branch_screen.dart';
 
+import 'login_screen.dart';
+
 class RepoScreen extends StatefulWidget {
   final String jwt;
   final String username;
@@ -36,7 +38,21 @@ class _RepoScreenState extends State<RepoScreen> {
   @override
   Widget build(BuildContext context) {
     return Scaffold(
-      appBar: AppBar(title: Text("Welcome ${widget.username}")),
+      appBar: AppBar(
+        title: Text("Welcome ${widget.username}"),
+        actions: [
+          IconButton(
+            icon: const Icon(Icons.logout),
+            onPressed: () {
+              Navigator.pushAndRemoveUntil(
+                context,
+                MaterialPageRoute(builder: (_) => const LoginScreen()),
+                (route) => false,
+              );
+            },
+          ),
+        ],
+      ),
       body: loading
           ? const Center(child: CircularProgressIndicator())
           : ListView.builder(

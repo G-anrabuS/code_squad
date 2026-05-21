@@ -31,7 +31,7 @@ async def github_login(
     redirect_uri = str(
         request.url_for("github_callback").include_query_params(**params)
     )
-    return await oauth.github.authorize_redirect(request, redirect_uri)
+    return await oauth.github.authorize_redirect(request, redirect_uri, prompt="login")
 
 
 @router.get("/github/callback", name="github_callback")
