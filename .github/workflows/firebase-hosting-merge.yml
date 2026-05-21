@@ -22,8 +22,8 @@ jobs:
             - uses: FirebaseExtended/action-hosting-deploy@v0
               with:
                   repoToken: "${{ secrets.GITHUB_TOKEN }}"
-                  firebaseServiceAccount: "${{ secrets.FIREBASE_SERVICE_ACCOUNT_YOUR_PROJECT_ID }}"
+                  firebaseServiceAccount: "${{ secrets.FIREBASE_SERVICE_ACCOUNT_CODESQUAD_88E63 }}"
                   channelId: live
-                  projectId: your-project-id
+                  projectId: "codesquad-88e63"
                   # Tell Firebase where the firebase.json is located
                   entryPoint: "./flutter_frontend"
