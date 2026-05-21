@@ -2,6 +2,7 @@ import 'package:flutter/material.dart';
 import '../services/api_service.dart';
 import 'branch_screen.dart';
 
+import 'package:url_launcher/url_launcher.dart';
 import 'login_screen.dart';
 
 class RepoScreen extends StatefulWidget {
@@ -19,6 +20,21 @@ class _RepoScreenState extends State<RepoScreen> {
 
   List repos = [];
   bool loading = true;
+
+  Future<void> logout(BuildContext context) async {
+    await launchUrl(
+      Uri.parse("https://github.com/logout"),
+      mode: LaunchMode.externalApplication,
+    );
+
+    if (context.mounted) {
+      Navigator.pushAndRemoveUntil(
+        context,
+        MaterialPageRoute(builder: (_) => const LoginScreen()),
+        (route) => false,
+      );
+    }
+  }
 
   @override
   void initState() {
@@ -43,13 +59,7 @@ class _RepoScreenState extends State<RepoScreen> {
         actions: [
           IconButton(
             icon: const Icon(Icons.logout),
-            onPressed: () {
-              Navigator.pushAndRemoveUntil(
-                context,
-                MaterialPageRoute(builder: (_) => const LoginScreen()),
-                (route) => false,
-              );
-            },
+            onPressed: () => logout(context),
           ),
         ],
       ),
