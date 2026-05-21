@@ -21,8 +21,7 @@ oauth.register(
 
 @router.get("/github/login")
 async def github_login(request: Request, platform: str = "mobile"):
-    # Pass the platform to the callback URL so we remember it
-    redirect_uri = request.url_for("github_callback") + f"?platform={platform}"
+    redirect_uri = str(request.url_for("github_callback")) + f"?platform={platform}"
     return await oauth.github.authorize_redirect(request, redirect_uri)
 
 
