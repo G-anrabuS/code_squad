@@ -10,6 +10,7 @@ app.add_middleware(
     CORSMiddleware,
     allow_origins=[
         "http://localhost:8080",
+        "https://codesquad-88e63.web.app/",
     ],
     allow_credentials=True,
     allow_methods=["*"],

@@ -1,0 +1,29 @@
+name: Deploy to Firebase Hosting on merge
+on:
+    push:
+        branches:
+            - main
+jobs:
+    build_and_deploy:
+        runs-on: ubuntu-latest
+        steps:
+            - uses: actions/checkout@v4
+
+            # --- ADD THIS BLOCK ---
+            - name: Set up Flutter
+              uses: subosito/flutter-action@v2
+              with:
+                  channel: "stable"
+            # ----------------------
+
+            # Make sure it changes into your flutter directory to run the build!
+            - run: cd flutter_frontend && flutter pub get && flutter build web --release
+
+            - uses: FirebaseExtended/action-hosting-deploy@v0
+              with:
+                  repoToken: "${{ secrets.GITHUB_TOKEN }}"
+                  firebaseServiceAccount: "${{ secrets.FIREBASE_SERVICE_ACCOUNT_YOUR_PROJECT_ID }}"
+                  channelId: live
+                  projectId: your-project-id
+                  # Tell Firebase where the firebase.json is located
+                  entryPoint: "./flutter_frontend"
