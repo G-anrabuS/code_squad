@@ -15,7 +15,7 @@ app.add_middleware(
     allow_origins=[
         "http://localhost:8080",
         "https://codesquad-88e63.web.app",
-        "https://code-squad-backend.onrender.com/",
+        "https://code-squad-backend.onrender.com",
         "http://localhost:3000",
     ],
     allow_credentials=True,
