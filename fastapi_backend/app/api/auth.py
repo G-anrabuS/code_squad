@@ -4,6 +4,10 @@ from app.core.config import GITHUB_CLIENT_ID, GITHUB_CLIENT_SECRET
 
 import httpx
 
+from app.core.security import create_access_token
+
+from fastapi.responses import RedirectResponse
+
 router = APIRouter()
 
 oauth = OAuth()
@@ -42,7 +46,10 @@ async def github_callback(request: Request):
 
     user = user_res.json()
 
-    request.session["github_token"] = access_token
-    request.session["github_username"] = user["login"]
+    app_token = create_access_token(
+        {"github_token": access_token, "github_username": user["login"]}
+    )
 
-    return {"user": user, "repos": repos_res.json()}
+    redirect_url = f"codesquad://auth" f"?jwt={app_token}" f"&username={user['login']}"
+
+    return RedirectResponse(url=redirect_url)
