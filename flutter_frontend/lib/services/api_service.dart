@@ -1,38 +1,61 @@
 import 'package:dio/dio.dart';
 import '../config/api_config.dart';
+import '../models/repo_model.dart';
+import '../models/analysis_report.dart';
+import 'auth_service.dart';
 
 class ApiService {
-  final Dio dio = Dio();
+  final Dio _dio = Dio(
+    BaseOptions(
+      baseUrl: ApiConfig.baseUrl,
+      connectTimeout: const Duration(seconds: 30),
+      receiveTimeout: const Duration(minutes: 2),
+    ),
+  );
 
-  Future<List<dynamic>> fetchRepos(String jwt) async {
-    final response = await dio.get(
-      "${ApiConfig.baseUrl}/user/repos",
-      options: Options(headers: {"Authorization": "Bearer $jwt"}),
-    );
+  final AuthService _authService = AuthService();
 
-    return response.data;
+  Future<Options> _authOptions() async {
+    final jwt = await _authService.getJwt();
+
+    return Options(headers: {"Authorization": "Bearer $jwt"});
   }
 
-  Future<List<dynamic>> fetchBranches(String repoName, String jwt) async {
-    final response = await dio.get(
-      "${ApiConfig.baseUrl}/user/branches/$repoName",
-      options: Options(headers: {"Authorization": "Bearer $jwt"}),
+  Future<List<RepoModel>> getRepos() async {
+    final response = await _dio.get(
+      "/user/repos",
+      options: await _authOptions(),
     );
 
-    return response.data;
+    return (response.data as List).map((e) => RepoModel.fromJson(e)).toList();
   }
 
-  Future<Map<String, dynamic>> scanRepo(
-    String repoName,
-    String branch,
-    String jwt,
-  ) async {
-    final response = await dio.post(
-      "${ApiConfig.baseUrl}/scan/repo",
+  Future<List<String>> getBranches(String repoName) async {
+    final response = await _dio.get(
+      "/user/branches/$repoName",
+      options: await _authOptions(),
+    );
+
+    return List<String>.from(response.data);
+  }
+
+  Future<String> scanRepo(String repoName, String branch) async {
+    final response = await _dio.post(
+      "/scan/repo",
       data: {"repo_name": repoName, "branch": branch},
-      options: Options(headers: {"Authorization": "Bearer $jwt"}),
+      options: await _authOptions(),
     );
 
-    return response.data;
+    return response.data["repo_path"];
+  }
+
+  Future<AnalysisReport> analyzeRepo(String repoPath) async {
+    final response = await _dio.post(
+      "/analysis/analyze",
+      data: {"repo_path": repoPath, "export_format": "json"},
+      options: await _authOptions(),
+    );
+
+    return AnalysisReport.fromJson(response.data);
   }
 }

@@ -5,6 +5,6 @@ class RepoModel {
   RepoModel({required this.name, required this.isPrivate});
 
   factory RepoModel.fromJson(Map<String, dynamic> json) {
-    return RepoModel(name: json["name"], isPrivate: json["private"]);
+    return RepoModel(name: json["name"], isPrivate: json["private"] ?? false);
   }
 }
