@@ -56,7 +56,7 @@ async def github_callback(
             base_url = web_origin
         else:
             # PUT YOUR ACTUAL FIREBASE URL HERE
-            base_url = "https://your-firebase-project-id.web.app"
+            base_url = "https://codesquad-88e63.web.app/"
 
         redirect_url = f"{base_url}/auth.html?jwt={app_token}&username={user['login']}"
     else:
