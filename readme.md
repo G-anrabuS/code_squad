@@ -8,13 +8,13 @@ CodeSquad is a Flutter + FastAPI application that allows users to log in with Gi
 
 # Current Features
 
-✅ GitHub OAuth Login\n
-✅ JWT Authentication\n
-✅ Fetch user repositories\n
-✅ Fetch repository branches\n
-✅ Clone public/private repositories\n
-✅ Intelligent source file filtering\n
-✅ Flutter Android frontend login flow\n
+✅ GitHub OAuth Login
+✅ JWT Authentication
+✅ Fetch user repositories
+✅ Fetch repository branches
+✅ Clone public/private repositories
+✅ Intelligent source file filtering
+✅ Flutter Android frontend login flow
 ✅ Backend deployed on Render
 
 ---
