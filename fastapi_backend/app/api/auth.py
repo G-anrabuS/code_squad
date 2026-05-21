@@ -19,14 +19,25 @@ oauth.register(
 )
 
 
+# 1. Accept the web_origin parameter
 @router.get("/github/login")
-async def github_login(request: Request, platform: str = "mobile"):
-    redirect_uri = str(request.url_for("github_callback")) + f"?platform={platform}"
+async def github_login(
+    request: Request, platform: str = "mobile", web_origin: str = None
+):
+    # Pass BOTH parameters to the callback using Starlette's safe query builder
+    redirect_uri = str(
+        request.url_for("github_callback").include_query_params(
+            platform=platform, web_origin=web_origin
+        )
+    )
     return await oauth.github.authorize_redirect(request, redirect_uri)
 
 
+# 2. Receive the web_origin in the callback
 @router.get("/github/callback", name="github_callback")
-async def github_callback(request: Request, platform: str = "mobile"):
+async def github_callback(
+    request: Request, platform: str = "mobile", web_origin: str = None
+):
     token = await oauth.github.authorize_access_token(request)
     access_token = token["access_token"]
     headers = {"Authorization": f"Bearer {access_token}"}
@@ -40,9 +51,9 @@ async def github_callback(request: Request, platform: str = "mobile"):
     )
 
     if platform == "web":
-        redirect_url = (
-            f"http://localhost:8080/auth.html?jwt={app_token}&username={user['login']}"
-        )
+        # 3. Use the dynamic origin if provided, otherwise fallback to Firebase
+        base_url = web_origin if web_origin else "https://your-project-id.web.app"
+        redirect_url = f"{base_url}/auth.html?jwt={app_token}&username={user['login']}"
     else:
         # Android / iOS behavior
         redirect_url = f"codesquad://callback?jwt={app_token}&username={user['login']}"
