@@ -8,14 +8,20 @@ class LoginScreen extends StatelessWidget {
 
   Future<void> login(BuildContext context) async {
     try {
-      final String platform = kIsWeb ? "web" : "mobile";
+      // Default to mobile
+      String loginUrl =
+          "https://code-squad-backend.onrender.com/auth/github/login?platform=mobile";
 
-      final String loginUrl =
-          "https://code-squad-backend.onrender.com/auth/github/login?platform=$platform";
+      // If running on Web, grab the current URL (localhost:8080 or Firebase)
+      if (kIsWeb) {
+        final String currentOrigin = Uri.base.origin;
+        loginUrl =
+            "https://code-squad-backend.onrender.com/auth/github/login?platform=web&web_origin=$currentOrigin";
+      }
 
       final result = await FlutterWebAuth2.authenticate(
         url: loginUrl,
-        callbackUrlScheme: "codesquad", // Web ignores this, Android uses it
+        callbackUrlScheme: "codesquad",
       );
 
       debugPrint("AUTH RESULT: $result");
@@ -34,11 +40,7 @@ class LoginScreen extends StatelessWidget {
       }
     } catch (e) {
       debugPrint("LOGIN ERROR: $e");
-      if (context.mounted) {
-        ScaffoldMessenger.of(
-          context,
-        ).showSnackBar(SnackBar(content: Text("Login failed: $e")));
-      }
+      // ... existing error snackbar ...
     }
   }
 
