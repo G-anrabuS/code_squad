@@ -1,5 +1,6 @@
 from fastapi import APIRouter, Request
 from app.services.clone_service import clone_repo
+from app.services.parser_service import get_relevant_files
 
 router = APIRouter()
 
@@ -9,9 +10,6 @@ async def scan_repo(payload: dict, request: Request):
     token = request.session.get("github_token")
     username = request.session.get("github_username")
 
-    if not token:
-        return {"error": "Not authenticated"}
-
     repo_name = payload["repo_name"]
     branch = payload["branch"]
 
@@ -19,4 +17,6 @@ async def scan_repo(payload: dict, request: Request):
         username=username, repo_name=repo_name, token=token, branch=branch
     )
 
-    return {"message": "Repo cloned successfully", "repo_path": repo_path}
+    files = get_relevant_files(repo_path)
+
+    return {"repo_path": repo_path, "file_count": len(files), "files": files[:20]}

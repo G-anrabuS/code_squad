@@ -1,8 +1,14 @@
 import os
 import shutil
+import stat
 from git import Repo
 
 TEMP_REPO_DIR = "temp_repos"
+
+
+def remove_readonly(func, path, _):
+    os.chmod(path, stat.S_IWRITE)
+    func(path)
 
 
 def clone_repo(username: str, repo_name: str, token: str, branch: str):
@@ -10,9 +16,8 @@ def clone_repo(username: str, repo_name: str, token: str, branch: str):
 
     repo_path = os.path.join(TEMP_REPO_DIR, repo_name)
 
-    # clean old clone
     if os.path.exists(repo_path):
-        shutil.rmtree(repo_path)
+        shutil.rmtree(repo_path, onerror=remove_readonly)
 
     clone_url = f"https://{token}@github.com/{username}/{repo_name}.git"
 
