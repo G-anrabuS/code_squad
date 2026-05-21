@@ -1,5 +1,6 @@
 import 'package:flutter/material.dart';
 import 'package:flutter_web_auth_2/flutter_web_auth_2.dart';
+import 'package:flutter/foundation.dart'; // Add this for kIsWeb
 import 'repo_screen.dart';
 
 class LoginScreen extends StatelessWidget {
@@ -7,20 +8,21 @@ class LoginScreen extends StatelessWidget {
 
   Future<void> login(BuildContext context) async {
     try {
+      final String platform = kIsWeb ? "web" : "mobile";
+
+      final String loginUrl =
+          "https://code-squad-backend.onrender.com/auth/github/login?platform=$platform";
+
       final result = await FlutterWebAuth2.authenticate(
-        url: "https://code-squad-backend.onrender.com/auth/github/login",
-        callbackUrlScheme: "codesquad",
+        url: loginUrl,
+        callbackUrlScheme: "codesquad", // Web ignores this, Android uses it
       );
 
       debugPrint("AUTH RESULT: $result");
 
       final uri = Uri.parse(result);
-
       final jwt = uri.queryParameters["jwt"];
       final username = uri.queryParameters["username"];
-
-      debugPrint("JWT: $jwt");
-      debugPrint("USERNAME: $username");
 
       if (jwt != null && context.mounted) {
         Navigator.pushReplacement(
@@ -29,12 +31,9 @@ class LoginScreen extends StatelessWidget {
             builder: (_) => RepoScreen(jwt: jwt, username: username ?? "User"),
           ),
         );
-      } else {
-        debugPrint("JWT NULL");
       }
     } catch (e) {
       debugPrint("LOGIN ERROR: $e");
-
       if (context.mounted) {
         ScaffoldMessenger.of(
           context,

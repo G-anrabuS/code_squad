@@ -1,0 +1,19 @@
+<!doctype html>
+<html>
+    <head>
+        <title>Authentication Callback</title>
+        <script>
+            window.onload = function () {
+                // Gets the URL containing your JWT and username
+                var url = window.location.href;
+                // Sends it back to the main Flutter window
+                window.opener.postMessage(url, "*");
+                // Closes the popup window
+                window.close();
+            };
+        </script>
+    </head>
+    <body>
+        <p>Authenticating... Please wait.</p>
+    </body>
+</html>
