@@ -50,6 +50,8 @@ async def github_callback(request: Request):
         {"github_token": access_token, "github_username": user["login"]}
     )
 
-    redirect_url = f"codesquad://auth" f"?jwt={app_token}" f"&username={user['login']}"
+    redirect_url = (
+        f"codesquad://callback" f"?jwt={app_token}" f"&username={user['login']}"
+    )
 
     return RedirectResponse(url=redirect_url)
