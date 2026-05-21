@@ -83,7 +83,7 @@ Code Squad/
 ## 1. Clone Repository
 
 ```bash
-git clone <your_repo_url>
+git clone https://github.com/G-anrabuS/code_squad
 cd fastapi_backend
 ```
 
@@ -111,20 +111,6 @@ source venv/bin/activate
 
 ```bash
 pip install -r requirements.txt
-```
-
-Current `requirements.txt`:
-
-```txt
-fastapi==0.136.1
-uvicorn==0.47.0
-Authlib==1.7.2
-httpx==0.28.1
-python-jose==3.5.0
-python-dotenv==1.2.2
-GitPython==3.1.50
-itsdangerous==2.2.0
-python-multipart==0.0.29
 ```
 
 ---
@@ -321,37 +307,6 @@ Required packages:
 ```yaml
 dio:
 flutter_web_auth_2:
-```
-
----
-
-# Android OAuth Deep Link Setup
-
-Open:
-
-```text
-android/app/src/main/AndroidManifest.xml
-```
-
-Inside MainActivity:
-
-```xml
-<intent-filter>
-    <action android:name="android.intent.action.VIEW"/>
-
-    <category android:name="android.intent.category.DEFAULT"/>
-    <category android:name="android.intent.category.BROWSABLE"/>
-
-    <data
-        android:scheme="codesquad"
-        android:host="auth"/>
-</intent-filter>
-```
-
-Also set:
-
-```xml
-android:launchMode="singleTask"
 ```
 
 ---
