@@ -69,13 +69,15 @@ def semantic_search(
             ]
         )
 
-    hits = qdrant_client.search(
+    response = qdrant_client.query_points(
         collection_name=collection_name,
-        query_vector=query_vector,
+        query=query_vector,
         limit=top_k,
         with_payload=True,
         query_filter=query_filter,
     )
+
+    hits = response.points
 
     results: List[Dict[str, Any]] = []
     for hit in hits:

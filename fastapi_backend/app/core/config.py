@@ -8,9 +8,7 @@ GITHUB_CLIENT_ID = os.getenv("GITHUB_CLIENT_ID")
 GITHUB_CLIENT_SECRET = os.getenv("GITHUB_CLIENT_SECRET")
 JWT_SECRET = os.getenv("JWT_SECRET")
 
-OPENAI_API_KEY = os.getenv("OPENAI_API_KEY")
-OPENAI_EMBEDDING_MODEL = os.getenv("OPENAI_EMBEDDING_MODEL", "text-embedding-3-small")
-OPENAI_LLM_MODEL = os.getenv("OPENAI_LLM_MODEL", "gemini-1.5")
+GEMINI_API_KEY = os.getenv("GEMINI_API_KEY")
 
 try:
     OPENAI_LLM_MODEL_MAP = json.loads(os.getenv("OPENAI_LLM_MODEL_MAP", "{}") or "{}")

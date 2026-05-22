@@ -1,27 +1,44 @@
 import json
 from typing import Any, Dict, List, Optional
 
-import openai
+import google.generativeai as genai
 
-from app.core.config import OPENAI_API_KEY, OPENAI_LLM_MODEL
+from app.core.config import GEMINI_API_KEY
+
+# Gemini 1.5 Flash is incredibly fast, free-tier friendly, and perfect for large contexts
+DEFAULT_MODEL = "gemini-1.5-flash"
 
 
-def _configure_openai() -> None:
-    if not OPENAI_API_KEY:
-        raise ValueError("OPENAI_API_KEY is not set. Please add OPENAI_API_KEY to .env.")
-    openai.api_key = OPENAI_API_KEY
+def _configure_gemini() -> None:
+    if not GEMINI_API_KEY:
+        raise ValueError(
+            "GEMINI_API_KEY is not set. Please add GEMINI_API_KEY to .env."
+        )
+    genai.configure(api_key=GEMINI_API_KEY)
 
 
 def _extract_json_payload(text: str) -> Dict[str, Any]:
     candidate = text.strip()
-    if candidate.startswith('```'):
-        candidate = candidate.strip('`')
 
-    if '{' not in candidate:
-        raise ValueError('LLM response did not contain a JSON object.')
+    # Clean up any potential markdown code blocks
+    if candidate.startswith("```json"):
+        candidate = candidate[7:]
+    elif candidate.startswith("```"):
+        candidate = candidate[3:]
 
-    start = candidate.index('{')
-    candidate = candidate[start:]
+    if candidate.endswith("```"):
+        candidate = candidate[:-3]
+
+    candidate = candidate.strip()
+
+    if "{" not in candidate:
+        raise ValueError("LLM response did not contain a JSON object.")
+
+    # Ensure we only parse the actual JSON object
+    start = candidate.index("{")
+    end = candidate.rindex("}") + 1
+    candidate = candidate[start:end]
+
     try:
         return json.loads(candidate)
     except json.JSONDecodeError as exc:
@@ -30,28 +47,28 @@ def _extract_json_payload(text: str) -> Dict[str, Any]:
 
 def _chunk_list(chunks: List[Dict[str, Any]]) -> str:
     if not chunks:
-        return 'No chunks were retrieved from Qdrant.'
+        return "No chunks were retrieved from Qdrant."
 
     chunk_texts = []
     for idx, chunk in enumerate(chunks, start=1):
-        payload = chunk.get('payload', {})
-        path = payload.get('path', '<unknown>')
-        snippet = payload.get('content', '')
-        snippet_preview = snippet[:500].replace('\n', ' ').strip()
+        payload = chunk.get("payload", {})
+        path = payload.get("path", "<unknown>")
+        snippet = payload.get("content", "")
+        snippet_preview = snippet[:500].replace("\n", " ").strip()
         chunk_texts.append(f"{idx}. path={path}\nsnippet={snippet_preview}")
-    return '\n\n'.join(chunk_texts)
+    return "\n\n".join(chunk_texts)
 
 
 async def analyze_agent(
     agent_name: str,
     repo_context: Dict[str, Any],
     chunks: List[Dict[str, Any]],
-    model: Optional[str] = None,
+    model_name: Optional[str] = None,
 ) -> Dict[str, Any]:
-    _configure_openai()
-    model = model or OPENAI_LLM_MODEL
+    _configure_gemini()
+    model_name = model_name or DEFAULT_MODEL
 
-    system_prompt = (
+    system_instruction = (
         "You are a software analysis specialist. You MUST return a single JSON object only. "
         "Do not add any explanation, markdown, or text outside the JSON object."
     )
@@ -72,14 +89,17 @@ async def analyze_agent(
         "Optionally include severity (string) and analysis_details (object)."
     )
 
-    response = await openai.ChatCompletion.acreate(
-        model=model,
-        messages=[
-            {"role": "system", "content": system_prompt},
-            {"role": "user", "content": user_prompt},
-        ],
-        temperature=0.2,
-        max_tokens=900,
+    # Initialize the Gemini model with specific generation configs
+    model = genai.GenerativeModel(
+        model_name=model_name,
+        system_instruction=system_instruction,
+        generation_config=genai.GenerationConfig(
+            temperature=0.2,
+            response_mime_type="application/json",  # Forces Gemini to return valid JSON
+        ),
     )
 
-    return _extract_json_payload(response.choices[0].message.content)
+    # Make the async call to Gemini
+    response = await model.generate_content_async(user_prompt)
+
+    return _extract_json_payload(response.text)

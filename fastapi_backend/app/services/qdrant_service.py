@@ -3,11 +3,7 @@ import os
 import uuid
 from typing import Any, Dict, List, Optional
 
-import openai
-
 from app.core.config import (
-    OPENAI_API_KEY,
-    OPENAI_EMBEDDING_MODEL,
     QDRANT_API_KEY,
     QDRANT_COLLECTION,
     QDRANT_DISTANCE,
@@ -53,14 +49,6 @@ DEPENDENCY_FILES = [
 ]
 
 
-def _configure_openai() -> None:
-    if not OPENAI_API_KEY:
-        raise ValueError(
-            "OPENAI_API_KEY is not set. Please add OPENAI_API_KEY to .env."
-        )
-    openai.api_key = OPENAI_API_KEY
-
-
 def _normalize_path(path: str) -> str:
     return path.replace("\\", "/").strip()
 
@@ -76,6 +64,7 @@ def _summarize_folder_tree(tree: Dict[str, Any], max_children: int = 5) -> str:
     top_files = [
         child.get("name") for child in children if child.get("type") == "file"
     ][:max_children]
+
     summary_lines = [
         f"Top-level directories: {', '.join(top_dirs) if top_dirs else 'None'}",
         f"Top-level files: {', '.join(top_files) if top_files else 'None'}",
@@ -118,19 +107,15 @@ def build_repo_context(repo_path: str, repo_id: Optional[str] = None) -> Dict[st
     parser = CodebaseParser(repo_path)
     codebase_data = parser.parse()
 
-    entry_points = _find_entry_points(list(parser.files.keys()))
-    dependency_files = _find_dependency_files(list(parser.files.keys()))
-    folder_tree = _summarize_folder_tree(codebase_data.get("file_tree", {}))
-    project_summary = _build_project_summary(codebase_data)
-
+    file_paths = list(parser.files.keys())
     return {
         "repo_id": repo_id or hashlib.sha1(repo_path.encode("utf-8")).hexdigest()[:10],
-        "project_summary": project_summary,
+        "project_summary": _build_project_summary(codebase_data),
         "tech_stack": codebase_data.get("tech_stack", []),
-        "folder_tree": folder_tree,
+        "folder_tree": _summarize_folder_tree(codebase_data.get("file_tree", {})),
         "important_files": codebase_data.get("important_files", []),
-        "entry_points": entry_points,
-        "dependency_files": dependency_files,
+        "entry_points": _find_entry_points(file_paths),
+        "dependency_files": _find_dependency_files(file_paths),
         "repository_name": os.path.basename(repo_path),
         "repository_path": repo_path,
         "repository_info": {
@@ -147,50 +132,42 @@ def build_repo_context(repo_path: str, repo_id: Optional[str] = None) -> Dict[st
 def ingest_repository_to_qdrant(
     repo_path: str,
     collection_name: Optional[str] = None,
-    model: Optional[str] = None,
 ) -> Dict[str, Any]:
     collection_name = collection_name or QDRANT_COLLECTION
-    model = model or OPENAI_EMBEDDING_MODEL
 
     repo_context = build_repo_context(repo_path)
     chunks = chunk_repository(repo_path)
     if not chunks:
         raise ValueError(f"No eligible code files found under {repo_path}.")
 
-    qdrant_client = get_qdrant_client(
-        QDRANT_URL, QDRANT_API_KEY, check_compatibility=False
-    )
+    qdrant_client = get_qdrant_client(QDRANT_URL, QDRANT_API_KEY)
     create_collection_if_not_exists(
         qdrant_client,
         collection_name=collection_name,
-        vector_size=384,  # <--- Changed from '1536 if ...'
+        vector_size=384,
         distance=QDRANT_DISTANCE,
     )
 
     texts = [chunk["content"] for chunk in chunks]
-    vectors = embed_texts(texts, model)
+    vectors = embed_texts(texts, model="all-MiniLM-L6-v2")
 
     points = []
     for chunk, vector in zip(chunks, vectors):
-
-        # Generate the valid UUID here
         valid_uuid = str(uuid.uuid5(uuid.NAMESPACE_DNS, chunk["id"]))
-
-        payload = {
-            "repo_id": repo_context["repo_id"],
-            "chunk_id": chunk["chunk_id"],
-            "path": chunk["path"],
-            "filename": chunk["filename"],
-            "language": chunk["language"],
-            "chunk_index": chunk["chunk_index"],
-            "line_range": chunk["line_range"],
-            "content": chunk["content"],
-        }
         points.append(
             {
-                "id": valid_uuid,  # <--- Use the valid UUID instead of chunk['id']
+                "id": valid_uuid,
                 "vector": vector,
-                "payload": payload,
+                "payload": {
+                    "repo_id": repo_context["repo_id"],
+                    "chunk_id": chunk["chunk_id"],
+                    "path": chunk["path"],
+                    "filename": chunk["filename"],
+                    "language": chunk["language"],
+                    "chunk_index": chunk["chunk_index"],
+                    "line_range": chunk["line_range"],
+                    "content": chunk["content"],
+                },
             }
         )
 
@@ -200,7 +177,6 @@ def ingest_repository_to_qdrant(
         "status": "success",
         "repo_id": repo_context["repo_id"],
         "collection_name": collection_name,
-        "model": model,
         "ingested_points": len(points),
         "repo_summary": repo_context["project_summary"],
     }
