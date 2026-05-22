@@ -4,6 +4,8 @@ from typing import Any, Dict, List, Optional
 from qdrant_client import QdrantClient
 from qdrant_client.http import models as rest_models
 
+from app.core.config import QDRANT_URL
+
 
 def get_qdrant_client(
     url: Optional[str] = None,
@@ -11,7 +13,7 @@ def get_qdrant_client(
     prefer_grpc: bool = False,
     check_compatibility: bool = False,
 ) -> QdrantClient:
-    url = url or "http://localhost:6333"
+    url = url or QDRANT_URL
     client_args = {
         "url": url,
         "prefer_grpc": prefer_grpc,

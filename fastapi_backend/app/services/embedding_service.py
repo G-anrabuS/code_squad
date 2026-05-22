@@ -2,7 +2,9 @@ import os
 import uuid
 from typing import Any, Dict, List, Optional
 
-from sentence_transformers import SentenceTransformer
+from google import genai
+from app.core.config import GEMINI_API_KEY
+
 from qdrant_client.http import models as rest_models
 
 from app.core.config import (
@@ -18,23 +20,15 @@ from app.db.qdrant import (
 )
 from app.services.chunk_service import chunk_repository
 
-# Define the new local model
-LOCAL_MODEL_NAME = "all-MiniLM-L6-v2"
+client = genai.Client(api_key=GEMINI_API_KEY)
+
+EMBEDDING_MODEL = "gemini-embedding-2"
+
 MODEL_DIMENSIONS = {
-    LOCAL_MODEL_NAME: 384,  # Updated to MiniLM's dimension size
+    EMBEDDING_MODEL: 768,
 }
 
 BATCH_SIZE = 32
-
-# Load the model once in memory (it will download automatically the first time)
-_embedding_model = None
-
-
-def _get_model() -> SentenceTransformer:
-    global _embedding_model
-    if _embedding_model is None:
-        _embedding_model = SentenceTransformer(LOCAL_MODEL_NAME)
-    return _embedding_model
 
 
 def semantic_search(
@@ -46,12 +40,14 @@ def semantic_search(
 ) -> List[Dict[str, Any]]:
     """Perform semantic search against Qdrant for the given query."""
     collection_name = collection_name or QDRANT_COLLECTION
-    model = model or LOCAL_MODEL_NAME
+    model = model or EMBEDDING_MODEL
 
-    transformer = _get_model()
+    response = client.models.embed_content(
+        model=EMBEDDING_MODEL,
+        contents=query,
+    )
 
-    # encode returns a numpy array, .tolist() converts it to standard Python floats
-    query_vector = transformer.encode(query).tolist()
+    query_vector = response.embeddings[0].values
 
     qdrant_client = get_qdrant_client(QDRANT_URL, QDRANT_API_KEY)
 
@@ -90,10 +86,17 @@ def semantic_search(
     return results
 
 
-def embed_texts(texts: List[str], model: str) -> List[List[float]]:
-    transformer = _get_model()
-    # SentenceTransformers handles batching natively and efficiently
-    embeddings = transformer.encode(texts, batch_size=BATCH_SIZE).tolist()
+def embed_texts(texts: List[str], model: str = EMBEDDING_MODEL) -> List[List[float]]:
+    embeddings = []
+
+    for text in texts:
+        response = client.models.embed_content(
+            model=model,
+            contents=text,
+        )
+
+        embeddings.append(response.embeddings[0].values)
+
     return embeddings
 
 
@@ -103,14 +106,14 @@ def ingest_repository_to_qdrant(
     model: Optional[str] = None,
 ) -> Dict[str, object]:
     collection_name = collection_name or QDRANT_COLLECTION
-    model = model or LOCAL_MODEL_NAME
+    model = model or EMBEDDING_MODEL
 
     chunks = chunk_repository(repo_path)
     if not chunks:
         raise ValueError(f"No eligible code files found under {repo_path}.")
 
     if model not in MODEL_DIMENSIONS:
-        raise ValueError(f"Unsupported embedding model. Use {LOCAL_MODEL_NAME}.")
+        raise ValueError("Unsupported embedding model. Use gemini-embedding-2.")
 
     qdrant_client = get_qdrant_client(QDRANT_URL, QDRANT_API_KEY)
 
