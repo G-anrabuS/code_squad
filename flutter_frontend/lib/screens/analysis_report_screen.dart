@@ -2,6 +2,7 @@ import 'dart:convert';
 
 import 'package:flutter/material.dart';
 import 'package:flutter/services.dart';
+
 import '../models/analysis_report.dart';
 
 class AnalysisReportScreen extends StatelessWidget {
@@ -9,77 +10,28 @@ class AnalysisReportScreen extends StatelessWidget {
 
   const AnalysisReportScreen({super.key, required this.report});
 
-  Widget sectionCard(String title, List<Widget> children) {
-    return Card(
-      margin: const EdgeInsets.symmetric(vertical: 8),
-      shape: RoundedRectangleBorder(borderRadius: BorderRadius.circular(14)),
-      child: Padding(
-        padding: const EdgeInsets.all(16),
-        child: Column(
-          crossAxisAlignment: CrossAxisAlignment.start,
-          children: [
-            Text(title,
-                style:
-                    const TextStyle(fontSize: 18, fontWeight: FontWeight.bold)),
-            const SizedBox(height: 12),
-            ...children,
-          ],
-        ),
-      ),
-    );
-  }
+  bool _agentFailed(Map<String, dynamic> section) => section['status'] == 'error';
 
-  Widget scorePanel(String label, double value, Color color) {
-    return Card(
-      margin: const EdgeInsets.symmetric(vertical: 8),
-      child: Padding(
-        padding: const EdgeInsets.all(14),
-        child: Column(
-          crossAxisAlignment: CrossAxisAlignment.start,
-          children: [
-            Text(label, style: const TextStyle(fontWeight: FontWeight.bold)),
-            const SizedBox(height: 10),
-            LinearProgressIndicator(value: value, color: color),
-            const SizedBox(height: 10),
-            Text('${(value * 100).toInt()}%',
-                style: const TextStyle(fontWeight: FontWeight.bold)),
-          ],
-        ),
-      ),
-    );
-  }
-
-  Widget issueList(String title, List<dynamic> items) {
-    return sectionCard(
-      title,
-      items.isEmpty
-          ? [const Text('No items found.')]
-          : items
-              .take(8)
-              .map((issue) => Padding(
-                    padding: const EdgeInsets.symmetric(vertical: 6),
-                    child: Text('• ${issue.toString()}'),
-                  ))
-              .toList(),
-    );
-  }
-
-  Future<void> _copySummary(BuildContext context) async {
-    final summary = report.projectSummary.entries
-        .map((entry) => '${entry.key}: ${entry.value}')
-        .join('\n');
-
-    await Clipboard.setData(ClipboardData(text: summary));
-    if (context.mounted) {
-      ScaffoldMessenger.of(context).showSnackBar(
-        const SnackBar(content: Text('Summary copied to clipboard')),
-      );
+  String _agentUnavailableTitle(String title) {
+    switch (title) {
+      case 'Architecture Review':
+        return 'Architecture analysis unavailable';
+      case 'Performance Review':
+        return 'Performance analysis unavailable';
+      case 'Security Review':
+        return 'Security analysis unavailable';
+      case 'Judge Review':
+        return 'Judge analysis unavailable';
+      case 'Summary Agent':
+        return 'Summary analysis unavailable';
+      default:
+        return '$title unavailable';
     }
   }
 
-  void _exportJson(BuildContext context) {
+  Future<void> _copyJson(BuildContext context) async {
     final encoded = const JsonEncoder.withIndent('  ').convert(report.raw);
-    Clipboard.setData(ClipboardData(text: encoded));
+    await Clipboard.setData(ClipboardData(text: encoded));
     if (context.mounted) {
       ScaffoldMessenger.of(context).showSnackBar(
         const SnackBar(content: Text('Report JSON copied to clipboard')),
@@ -87,176 +39,336 @@ class AnalysisReportScreen extends StatelessWidget {
     }
   }
 
-  void _downloadPdf(BuildContext context) {
-    if (context.mounted) {
-      ScaffoldMessenger.of(context).showSnackBar(
-        const SnackBar(content: Text('PDF export coming soon')),
+  Widget _sectionCard(BuildContext context, String title, List<Widget> children) {
+    final scheme = Theme.of(context).colorScheme;
+    return Card(
+      color: scheme.surfaceContainerLow,
+      margin: const EdgeInsets.symmetric(vertical: 8),
+      shape: RoundedRectangleBorder(borderRadius: BorderRadius.circular(20)),
+      child: Padding(
+        padding: const EdgeInsets.all(18),
+        child: Column(
+          crossAxisAlignment: CrossAxisAlignment.start,
+          children: [
+            Text(
+              title,
+              style: Theme.of(
+                context,
+              ).textTheme.titleLarge?.copyWith(fontWeight: FontWeight.w700),
+            ),
+            const SizedBox(height: 14),
+            ...children,
+          ],
+        ),
+      ),
+    );
+  }
+
+  Widget _overviewRow(BuildContext context, String label, String value) {
+    final style = Theme.of(context).textTheme.bodyMedium;
+    return Padding(
+      padding: const EdgeInsets.symmetric(vertical: 4),
+      child: Row(
+        crossAxisAlignment: CrossAxisAlignment.start,
+        children: [
+          SizedBox(
+            width: 120,
+            child: Text(
+              label,
+              style: style?.copyWith(
+                color: Theme.of(context).colorScheme.onSurfaceVariant,
+              ),
+            ),
+          ),
+          Expanded(
+            child: Text(
+              value.isEmpty ? 'Unavailable' : value,
+              style: style?.copyWith(fontWeight: FontWeight.w600),
+            ),
+          ),
+        ],
+      ),
+    );
+  }
+
+  Widget _scoreBadge(BuildContext context) {
+    final score = report.overallScore;
+    final scheme = Theme.of(context).colorScheme;
+    final normalized = (score / 100).clamp(0.0, 1.0);
+
+    return Container(
+      padding: const EdgeInsets.all(16),
+      decoration: BoxDecoration(
+        color: scheme.primaryContainer,
+        borderRadius: BorderRadius.circular(18),
+      ),
+      child: Column(
+        crossAxisAlignment: CrossAxisAlignment.start,
+        children: [
+          Text(
+            'Overall Score',
+            style: Theme.of(context).textTheme.titleMedium?.copyWith(
+              color: scheme.onPrimaryContainer,
+              fontWeight: FontWeight.w700,
+            ),
+          ),
+          const SizedBox(height: 10),
+          LinearProgressIndicator(
+            value: normalized,
+            minHeight: 10,
+            borderRadius: BorderRadius.circular(999),
+          ),
+          const SizedBox(height: 10),
+          Text(
+            score.toStringAsFixed(1),
+            style: Theme.of(context).textTheme.headlineSmall?.copyWith(
+              color: scheme.onPrimaryContainer,
+              fontWeight: FontWeight.bold,
+            ),
+          ),
+        ],
+      ),
+    );
+  }
+
+  Widget _severityBadge(BuildContext context, String? severity) {
+    final value = (severity ?? '').trim();
+    if (value.isEmpty) return const SizedBox.shrink();
+
+    final scheme = Theme.of(context).colorScheme;
+    Color background = scheme.secondaryContainer;
+    Color foreground = scheme.onSecondaryContainer;
+    final upper = value.toUpperCase();
+
+    if (upper.contains('CRITICAL') || upper.contains('HIGH')) {
+      background = scheme.errorContainer;
+      foreground = scheme.onErrorContainer;
+    } else if (upper.contains('MEDIUM')) {
+      background = Colors.orange.withValues(alpha: 0.18);
+      foreground = Colors.orange.shade200;
+    } else if (upper.contains('LOW')) {
+      background = Colors.green.withValues(alpha: 0.16);
+      foreground = Colors.green.shade200;
+    }
+
+    return Container(
+      padding: const EdgeInsets.symmetric(horizontal: 12, vertical: 6),
+      decoration: BoxDecoration(
+        color: background,
+        borderRadius: BorderRadius.circular(999),
+      ),
+      child: Text(
+        upper,
+        style: TextStyle(fontWeight: FontWeight.w700, color: foreground),
+      ),
+    );
+  }
+
+  Widget _recommendationList(List<dynamic> items) {
+    if (items.isEmpty) {
+      return const Text('No recommendations available.');
+    }
+
+    return Column(
+      crossAxisAlignment: CrossAxisAlignment.start,
+      children: items
+          .map(
+            (item) => Padding(
+              padding: const EdgeInsets.symmetric(vertical: 4),
+              child: Row(
+                crossAxisAlignment: CrossAxisAlignment.start,
+                children: [
+                  const Padding(
+                    padding: EdgeInsets.only(top: 3, right: 8),
+                    child: Icon(Icons.circle, size: 8),
+                  ),
+                  Expanded(child: Text(item.toString())),
+                ],
+              ),
+            ),
+          )
+          .toList(),
+    );
+  }
+
+  List<Widget> _findingsWidgets(Map<String, dynamic> findings) {
+    if (findings.isEmpty) {
+      return [const Text('No findings available.')];
+    }
+
+    return findings.entries.map((entry) {
+      final value = entry.value;
+      final prettyValue = const JsonEncoder.withIndent('  ').convert(value);
+      return ExpansionTile(
+        tilePadding: EdgeInsets.zero,
+        childrenPadding: const EdgeInsets.only(bottom: 12),
+        title: Text(
+          entry.key.replaceAll('_', ' '),
+          style: const TextStyle(fontWeight: FontWeight.w600),
+        ),
+        children: [
+          Container(
+            width: double.infinity,
+            padding: const EdgeInsets.all(12),
+            decoration: BoxDecoration(
+              borderRadius: BorderRadius.circular(14),
+              color: Colors.black.withValues(alpha: 0.18),
+            ),
+            child: SelectableText(
+              prettyValue,
+              style: const TextStyle(fontFamily: 'monospace', fontSize: 12),
+            ),
+          ),
+        ],
+      );
+    }).toList();
+  }
+
+  Widget _agentSection(
+    BuildContext context,
+    String title,
+    Map<String, dynamic> section,
+  ) {
+    if (_agentFailed(section)) {
+      return _sectionCard(
+        context,
+        title,
+        [
+          Text(
+            _agentUnavailableTitle(title),
+            style: Theme.of(context).textTheme.titleMedium?.copyWith(
+              fontWeight: FontWeight.w700,
+            ),
+          ),
+          const SizedBox(height: 8),
+          Text(section['message']?.toString() ?? 'This analysis is unavailable.'),
+        ],
       );
     }
+
+    final summary = section['summary']?.toString() ?? 'No summary available.';
+    final findings = Map<String, dynamic>.from(section['findings'] ?? const {});
+    final recommendations = List<dynamic>.from(
+      section['recommendations'] ?? const [],
+    );
+    final severity = section['severity']?.toString();
+
+    return _sectionCard(
+      context,
+      title,
+      [
+        Row(
+          children: [
+            Expanded(
+              child: Text(
+                summary,
+                style: Theme.of(context).textTheme.bodyLarge,
+              ),
+            ),
+            const SizedBox(width: 12),
+            _severityBadge(context, severity),
+          ],
+        ),
+        const SizedBox(height: 16),
+        Text(
+          'Findings',
+          style: Theme.of(
+            context,
+          ).textTheme.titleMedium?.copyWith(fontWeight: FontWeight.w700),
+        ),
+        const SizedBox(height: 8),
+        ..._findingsWidgets(findings),
+        const SizedBox(height: 12),
+        Text(
+          'Recommendations',
+          style: Theme.of(
+            context,
+          ).textTheme.titleMedium?.copyWith(fontWeight: FontWeight.w700),
+        ),
+        const SizedBox(height: 8),
+        _recommendationList(recommendations),
+      ],
+    );
+  }
+
+  Widget _stringListSection(
+    BuildContext context,
+    String title,
+    List<String> items,
+  ) {
+    return _sectionCard(
+      context,
+      title,
+      [
+        if (items.isEmpty) const Text('No items available.') else _recommendationList(items),
+      ],
+    );
   }
 
   @override
   Widget build(BuildContext context) {
     final repoInfo = report.repositoryInfo;
-    final architecture = report.architectureAnalysis;
-    final quality = report.codeQuality;
-    final performance = report.performance;
-    final security = report.security;
-    final recommendations = report.recommendations;
+    final techStack = List<String>.from(repoInfo['tech_stack'] ?? const []);
 
-    return DefaultTabController(
-      length: 6,
-      child: Scaffold(
-        appBar: AppBar(
-          title: const Text('Report Dashboard'),
-          actions: [
-            IconButton(
-              tooltip: 'Copy Summary',
-              icon: const Icon(Icons.copy_all),
-              onPressed: () => _copySummary(context),
-            ),
-            IconButton(
-              tooltip: 'Export JSON',
-              icon: const Icon(Icons.file_download),
-              onPressed: () => _exportJson(context),
-            ),
-            IconButton(
-              tooltip: 'Download PDF',
-              icon: const Icon(Icons.picture_as_pdf),
-              onPressed: () => _downloadPdf(context),
-            ),
-          ],
-          bottom: const TabBar(
-            isScrollable: true,
-            tabs: [
-              Tab(text: 'Overview'),
-              Tab(text: 'Code'),
-              Tab(text: 'Architecture'),
-              Tab(text: 'Security'),
-              Tab(text: 'Performance'),
-              Tab(text: 'Files'),
-            ],
+    return Scaffold(
+      appBar: AppBar(
+        title: const Text('Analysis Report'),
+        actions: [
+          IconButton(
+            tooltip: 'Copy JSON',
+            icon: const Icon(Icons.copy_all_rounded),
+            onPressed: () => _copyJson(context),
           ),
-        ),
-        body: TabBarView(
+        ],
+      ),
+      body: SingleChildScrollView(
+        padding: const EdgeInsets.all(16),
+        child: Column(
+          crossAxisAlignment: CrossAxisAlignment.start,
           children: [
-            SingleChildScrollView(
-              padding: const EdgeInsets.all(16),
-              child: Column(
-                children: [
-                  sectionCard(
-                    'Overview',
-                    [
-                      scorePanel(
-                        'Overall',
-                        (report.report['overall_score'] ?? 0).toDouble(),
-                        Theme.of(context).colorScheme.primary,
-                      ),
-                      const SizedBox(height: 14),
-                      Text(
-                        report.report['summary']?.toString() ??
-                            'Summary unavailable.',
-                        style: const TextStyle(fontSize: 16),
-                      ),
-                    ],
-                  ),
-                  sectionCard(
-                    'Repository Info',
-                    [
-                      Text('Project Type: ${repoInfo['project_type'] ?? 'Unknown'}'),
-                      const SizedBox(height: 6),
-                      Text(
-                        'Tech Stack: ${(repoInfo['tech_stack'] as List?)?.join(', ') ?? 'Unknown'}',
-                      ),
-                      const SizedBox(height: 6),
-                      Text('Total files: ${repoInfo['total_files'] ?? 0}'),
-                    ],
-                  ),
-                ],
-              ),
+            _sectionCard(
+              context,
+              'Overview',
+              [
+                _scoreBadge(context),
+                const SizedBox(height: 16),
+                _overviewRow(context, 'Repo ID', report.repoId),
+                _overviewRow(context, 'Timestamp', report.timestamp),
+                _overviewRow(
+                  context,
+                  'Project Type',
+                  repoInfo['project_type']?.toString() ?? 'Unknown',
+                ),
+                _overviewRow(
+                  context,
+                  'Total Files',
+                  repoInfo['total_files']?.toString() ?? '0',
+                ),
+                _overviewRow(
+                  context,
+                  'Tech Stack',
+                  techStack.isEmpty ? 'Unknown' : techStack.join(', '),
+                ),
+              ],
             ),
-            SingleChildScrollView(
-              padding: const EdgeInsets.all(16),
-              child: Column(
-                children: [
-                  scorePanel('Maintainability',
-                      (quality['maintainability'] ?? 0).toDouble(), Colors.blue),
-                  scorePanel('Readability',
-                      (quality['readability'] ?? 0).toDouble(), Colors.green),
-                  scorePanel('Modularity',
-                      (quality['modularity'] ?? 0).toDouble(), Colors.teal),
-                  const SizedBox(height: 12),
-                  issueList('Code Quality Notes',
-                      quality['issues'] ?? ['No code quality details available.']),
-                ],
-              ),
+            _agentSection(context, 'Summary Agent', report.summary),
+            _agentSection(context, 'Judge Review', report.judgeReview),
+            _agentSection(
+              context,
+              'Architecture Review',
+              report.architectureReview,
             ),
-            SingleChildScrollView(
-              padding: const EdgeInsets.all(16),
-              child: Column(
-                children: [
-                  sectionCard(
-                    'Architecture Health',
-                    [
-                      Text('Current Style: ${architecture['current_pattern'] ?? 'Unknown'}'),
-                      const SizedBox(height: 8),
-                      Text('Complexity: ${architecture['complexity'] ?? 'Unknown'}'),
-                      const SizedBox(height: 8),
-                      Text('Maturity: ${architecture['maturity'] ?? 'Unknown'}'),
-                    ],
-                  ),
-                  issueList('Architecture Issues',
-                      architecture['issues'] ?? ['No architecture issues available.']),
-                ],
-              ),
+            _agentSection(
+              context,
+              'Performance Review',
+              report.performanceReview,
             ),
-            SingleChildScrollView(
-              padding: const EdgeInsets.all(16),
-              child: Column(
-                children: [
-                  sectionCard(
-                    'Security Status',
-                    [
-                      Text('Severity: ${security['severity_level'] ?? 'Unknown'}'),
-                      const SizedBox(height: 8),
-                      Text('Finding count: ${(security['issues'] as List?)?.length ?? 0}'),
-                    ],
-                  ),
-                  issueList('Critical Security Risks',
-                      security['critical_issues'] ?? ['No critical issues found.']),
-                ],
-              ),
-            ),
-            SingleChildScrollView(
-              padding: const EdgeInsets.all(16),
-              child: Column(
-                children: [
-                  issueList('Performance Suggestions',
-                      performance['recommendations'] ?? ['No performance recommendations.']),
-                  issueList('Optimization Opportunities',
-                      performance['opportunities'] ?? ['No optimization opportunities.']),
-                ],
-              ),
-            ),
-            SingleChildScrollView(
-              padding: const EdgeInsets.all(16),
-              child: Column(
-                children: [
-                  issueList('Top File Risks',
-                      report.report['files'] ?? ['File review not available.']),
-                  sectionCard(
-                    'Raw File Data',
-                    [
-                      SelectableText(
-                        const JsonEncoder.withIndent('  ').convert(
-                          report.report['files'] ?? {'info': 'No file data'},
-                        ),
-                        style: const TextStyle(fontFamily: 'monospace'),
-                      ),
-                    ],
-                  ),
-                ],
-              ),
+            _agentSection(context, 'Security Review', report.securityReview),
+            _stringListSection(context, 'Priority Fixes', report.priorityFixes),
+            _stringListSection(
+              context,
+              'Final Recommendations',
+              report.finalRecommendations,
             ),
           ],
         ),

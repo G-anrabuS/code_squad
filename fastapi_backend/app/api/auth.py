@@ -1,10 +1,12 @@
-from fastapi import APIRouter, HTTPException, Request
-from authlib.integrations.starlette_client import OAuth
-from app.core.config import GITHUB_CLIENT_ID, GITHUB_CLIENT_SECRET
 import httpx
+from authlib.integrations.starlette_client import OAuth
+from fastapi import APIRouter, HTTPException, Request
+from fastapi.responses import RedirectResponse
+
+from app.core.config import GITHUB_CLIENT_ID, GITHUB_CLIENT_SECRET
 from app.core.security import create_access_token
 from app.core.token_store import consume_pending_login, create_pending_login
-from fastapi.responses import RedirectResponse
+from app.models.user import ExchangeLoginRequest
 
 router = APIRouter()
 oauth = OAuth()
@@ -69,12 +71,8 @@ async def github_callback(
 
 
 @router.post("/exchange")
-async def exchange_login_code(payload: dict):
-    login_code = payload.get("code")
-    if not login_code:
-        raise HTTPException(status_code=400, detail="Login code is required")
-
-    session = consume_pending_login(login_code)
+async def exchange_login_code(payload: ExchangeLoginRequest):
+    session = consume_pending_login(payload.code)
     if not session:
         raise HTTPException(status_code=401, detail="Invalid or expired login code")
 

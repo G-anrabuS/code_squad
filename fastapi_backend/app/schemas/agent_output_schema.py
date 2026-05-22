@@ -1,5 +1,5 @@
 from typing import Any, Dict, List, Optional
-from pydantic import BaseModel
+from pydantic import BaseModel, Field
 
 
 class AgentOutput(BaseModel):
@@ -10,6 +10,13 @@ class AgentOutput(BaseModel):
     insights: Dict[str, Any]
     severity: Optional[str] = None
     analysis_details: Optional[Dict[str, Any]] = None
+
+
+class AgentFailure(BaseModel):
+    status: str = "error"
+    message: str
+    error_type: str = "agent_failure"
+    agent_name: str
 
 
 class SummaryReview(AgentOutput):

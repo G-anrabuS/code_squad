@@ -1,7 +1,8 @@
-from typing import Any, Dict, List
+from typing import Any, Dict, List, Union
 from pydantic import BaseModel
 
 from app.schemas.agent_output_schema import (
+    AgentFailure,
     ArchitectReview,
     JudgeReview,
     PerformanceReview,
@@ -16,11 +17,11 @@ class FinalAnalysisReport(BaseModel):
     repository_info: Dict[str, Any]
     repo_context: Dict[str, Any]
     overall_score: float
-    summary: SummaryReview
-    judge_review: JudgeReview
-    architecture_review: ArchitectReview
-    performance_review: PerformanceReview
-    security_review: SecurityReview
+    summary: Union[SummaryReview, AgentFailure]
+    judge_review: Union[JudgeReview, AgentFailure]
+    architecture_review: Union[ArchitectReview, AgentFailure]
+    performance_review: Union[PerformanceReview, AgentFailure]
+    security_review: Union[SecurityReview, AgentFailure]
     priority_fixes: List[str]
     improved_architecture: Dict[str, Any]
     final_recommendations: List[str]

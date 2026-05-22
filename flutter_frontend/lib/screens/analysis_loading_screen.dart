@@ -1,6 +1,7 @@
 import 'package:flutter/material.dart';
 import '../services/api_service.dart';
 import '../models/analysis_report.dart';
+import '../widgets/app_feedback.dart';
 import 'analysis_report_screen.dart';
 
 class AnalysisLoadingScreen extends StatefulWidget {
@@ -34,12 +35,11 @@ class _AnalysisLoadingScreenState extends State<AnalysisLoadingScreen> {
         MaterialPageRoute(builder: (_) => AnalysisReportScreen(report: report)),
       );
     } catch (e) {
-      debugPrint('Analysis request failed: $e');
       if (!mounted) return;
-
-      ScaffoldMessenger.of(
-        context,
-      ).showSnackBar(SnackBar(content: Text("Analysis failed: $e")));
+      final message = e is AnalysisApiException
+          ? e.userMessage
+          : 'Analysis failed. Please try again.';
+      showErrorSnackBar(context, message);
 
       Navigator.pop(context);
     }

@@ -2,20 +2,26 @@
 API endpoints for codebase analysis.
 """
 from io import BytesIO
-from fastapi import APIRouter, HTTPException, BackgroundTasks
-from fastapi.responses import StreamingResponse
-from pydantic import BaseModel
+import logging
+import os
+import uuid
 from typing import Dict, Any, Optional
-from app.services.analysis_pipeline import run_full_analysis, run_analysis_export
+
+from fastapi import APIRouter, BackgroundTasks, HTTPException
+from fastapi.responses import JSONResponse, StreamingResponse
+from pydantic import BaseModel
+
+from app.services.analysis_errors import AnalysisError
+from app.services.analysis_pipeline import run_full_analysis
 from app.services.embedding_service import ingest_repository_to_qdrant
-from app.services.clone_service import clone_repo, clone_repo_from_url
+from app.services.clone_service import clone_repo_from_url
 from app.services.download_service import render_markdown, render_pdf_bytes, render_json
 from app.services.chat_service import rag_chat
 from app.services.qdrant_service import build_repo_context
-import os
 
 
 router = APIRouter(tags=["analysis"])
+logger = logging.getLogger(__name__)
 
 # Store for background task results
 analysis_results: Dict[str, Dict[str, Any]] = {}
@@ -48,8 +54,9 @@ class ChatRequest(BaseModel):
 class AnalysisResponse(BaseModel):
     """Response model for analysis."""
     status: str
-    report: Optional[Dict[str, Any]] = None
-    error: Optional[str] = None
+    data: Optional[Dict[str, Any]] = None
+    error_type: Optional[str] = None
+    message: Optional[str] = None
     task_id: Optional[str] = None
 
 
@@ -72,7 +79,7 @@ class EmbedResponse(BaseModel):
 @router.post("/embed", response_model=EmbedResponse)
 async def embed_codebase(request: EmbedRequest) -> EmbedResponse:
     """
-    Ingest codebase chunks into Qdrant using OpenAI embeddings.
+    Ingest codebase chunks into Qdrant using local embeddings.
 
     - **repo_path**: Path to the repository to index
     - **model**: Optional embedding model name
@@ -100,12 +107,16 @@ async def embed_codebase(request: EmbedRequest) -> EmbedResponse:
         )
     except HTTPException:
         raise
-    except Exception as e:
-        raise HTTPException(status_code=500, detail=str(e))
+    except Exception:
+        logger.exception("Embed endpoint failed unexpectedly")
+        raise HTTPException(
+            status_code=500,
+            detail="Embedding ingestion failed unexpectedly.",
+        )
 
 
 @router.post("/analyze", response_model=AnalysisResponse)
-async def analyze_codebase(request: AnalysisRequest) -> AnalysisResponse:
+async def analyze_codebase(request: AnalysisRequest):
     """
     Analyze a codebase and return comprehensive findings.
 
@@ -116,7 +127,6 @@ async def analyze_codebase(request: AnalysisRequest) -> AnalysisResponse:
     try:
         repo_path = _resolve_repo_path(request)
 
-        # Run analysis
         report = await run_full_analysis(repo_path)
         report_data = report.dict()
         report_data['type'] = request.export_format or 'json'
@@ -124,20 +134,25 @@ async def analyze_codebase(request: AnalysisRequest) -> AnalysisResponse:
         if request.export_format == 'markdown':
             return AnalysisResponse(
                 status='success',
-                report={'markdown': render_markdown(report_data), 'type': 'markdown'}
+                data={'markdown': render_markdown(report_data), 'type': 'markdown'}
             )
 
         return AnalysisResponse(
             status='success',
-            report=report_data,
+            data=report_data,
         )
+    except AnalysisError as exc:
+        return JSONResponse(status_code=exc.http_status, content=exc.to_response())
     except HTTPException:
         raise
-    except Exception as e:
-        return AnalysisResponse(
-            status='error',
-            error=str(e)
+    except Exception:
+        logger.exception("Analysis endpoint failed unexpectedly")
+        error = AnalysisError(
+            error_type="unknown_error",
+            message="Analysis failed unexpectedly.",
+            http_status=500,
         )
+        return JSONResponse(status_code=error.http_status, content=error.to_response())
 
 
 @router.post("/download")
@@ -169,8 +184,12 @@ async def download_report(request: DownloadRequest):
             media_type='application/json',
             headers={'Content-Disposition': f'attachment; filename="{filename}"'},
         )
-    except Exception as e:
-        raise HTTPException(status_code=500, detail=str(e))
+    except Exception:
+        logger.exception("Download endpoint failed unexpectedly")
+        raise HTTPException(
+            status_code=500,
+            detail="Report download failed unexpectedly.",
+        )
 
 
 @router.post("/chat")
@@ -194,8 +213,12 @@ async def chat_codebase(request: ChatRequest) -> Dict[str, Any]:
         }
     except HTTPException:
         raise
-    except Exception as e:
-        raise HTTPException(status_code=500, detail=str(e))
+    except Exception:
+        logger.exception("Chat endpoint failed unexpectedly")
+        raise HTTPException(
+            status_code=500,
+            detail="Chat request failed unexpectedly.",
+        )
 
 
 @router.post("/analyze/background")
@@ -211,7 +234,6 @@ async def analyze_codebase_background(
     try:
         repo_path = _resolve_repo_path(request)
 
-        import uuid
         task_id = str(uuid.uuid4())
 
         background_tasks.add_task(
@@ -228,8 +250,16 @@ async def analyze_codebase_background(
         }
     except HTTPException:
         raise
-    except Exception as e:
-        raise HTTPException(status_code=500, detail=str(e))
+    except AnalysisError as exc:
+        return JSONResponse(status_code=exc.http_status, content=exc.to_response())
+    except Exception:
+        logger.exception("Background analysis enqueue failed unexpectedly")
+        error = AnalysisError(
+            error_type="unknown_error",
+            message="Failed to start background analysis.",
+            http_status=500,
+        )
+        return JSONResponse(status_code=error.http_status, content=error.to_response())
 
 
 @router.get("/analysis/result/{task_id}")
@@ -237,8 +267,9 @@ async def get_analysis_result(task_id: str) -> Dict[str, Any]:
     """Get results of background analysis task."""
     if task_id not in analysis_results:
         return {
-            'status': 'not_found',
-            'error': f'Task {task_id} not found',
+            'status': 'error',
+            'error_type': 'not_found',
+            'message': f'Task {task_id} not found',
         }
     return analysis_results[task_id]
 
@@ -250,15 +281,16 @@ async def get_analysis_summary(task_id: str) -> Dict[str, Any]:
         raise HTTPException(status_code=404, detail=f'Task {task_id} not found')
 
     result = analysis_results[task_id]
-    if result['status'] != 'complete':
+    if result['status'] != 'success':
         return {
             'status': result['status'],
-            'error': result.get('error'),
+            'error_type': result.get('error_type'),
+            'message': result.get('message'),
         }
 
-    report = result['report']
+    report = result['data']
     return {
-        'status': 'complete',
+        'status': 'success',
         'timestamp': report.get('timestamp'),
         'repository_info': {
             'total_files': report['repository_info']['total_files'],
@@ -298,12 +330,16 @@ async def _run_analysis_background(task_id: str, repo_path: str, export_format: 
             report_data['type'] = 'json'
 
         analysis_results[task_id] = {
-            'status': 'complete',
-            'report': report_data,
+            'status': 'success',
+            'data': report_data,
             'timestamp': report_data.get('timestamp'),
         }
-    except Exception as e:
-        analysis_results[task_id] = {
-            'status': 'error',
-            'error': str(e),
-        }
+    except AnalysisError as exc:
+        analysis_results[task_id] = exc.to_response()
+    except Exception:
+        logger.exception("Background analysis failed unexpectedly")
+        analysis_results[task_id] = AnalysisError(
+            error_type='unknown_error',
+            message='Background analysis failed unexpectedly.',
+            http_status=500,
+        ).to_response()

@@ -1,5 +1,6 @@
 import 'package:flutter/material.dart';
 import '../services/api_service.dart';
+import '../widgets/app_feedback.dart';
 import 'analysis_loading_screen.dart';
 
 class ScanScreen extends StatefulWidget {
@@ -39,10 +40,8 @@ class _ScanScreenState extends State<ScanScreen> {
         ),
       );
     } catch (e) {
-      debugPrint('Scan repo failed: $e');
-      ScaffoldMessenger.of(
-        context,
-      ).showSnackBar(SnackBar(content: Text("Scan failed: $e")));
+      if (!mounted) return;
+      showErrorSnackBar(context, "Scan failed: $e");
     } finally {
       if (mounted) {
         setState(() => loading = false);

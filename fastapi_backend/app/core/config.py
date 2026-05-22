@@ -1,4 +1,3 @@
-import json
 import os
 from dotenv import load_dotenv
 
@@ -9,11 +8,6 @@ GITHUB_CLIENT_SECRET = os.getenv("GITHUB_CLIENT_SECRET")
 JWT_SECRET = os.getenv("JWT_SECRET")
 
 GEMINI_API_KEY = os.getenv("GEMINI_API_KEY")
-
-try:
-    OPENAI_LLM_MODEL_MAP = json.loads(os.getenv("OPENAI_LLM_MODEL_MAP", "{}") or "{}")
-except json.JSONDecodeError:
-    OPENAI_LLM_MODEL_MAP = {}
 
 QDRANT_URL = os.getenv("QDRANT_URL", "http://localhost:6333")
 QDRANT_API_KEY = os.getenv("QDRANT_API_KEY")

@@ -4,6 +4,7 @@ import 'package:dio/dio.dart';
 import 'package:flutter_web_auth_2/flutter_web_auth_2.dart';
 import '../config/api_config.dart';
 import '../services/auth_service.dart';
+import '../widgets/app_feedback.dart';
 import 'repo_screen.dart';
 
 class LoginScreen extends StatefulWidget {
@@ -67,13 +68,8 @@ class _LoginScreenState extends State<LoginScreen> {
         MaterialPageRoute(builder: (_) => const RepoScreen()),
       );
     } catch (e) {
-      debugPrint("LOGIN ERROR: $e");
-
       if (!mounted) return;
-
-      ScaffoldMessenger.of(
-        context,
-      ).showSnackBar(SnackBar(content: Text("Login failed: $e")));
+      showErrorSnackBar(context, "Login failed: $e");
     } finally {
       if (mounted) {
         setState(() => _loading = false);

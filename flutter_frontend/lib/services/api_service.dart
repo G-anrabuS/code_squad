@@ -1,8 +1,7 @@
 import 'package:dio/dio.dart';
-import 'package:flutter/foundation.dart';
 import '../config/api_config.dart';
-import '../models/repo_model.dart';
 import '../models/analysis_report.dart';
+import '../models/repo_model.dart';
 import 'auth_service.dart';
 
 class ApiService {
@@ -51,34 +50,72 @@ class ApiService {
   }
 
   Future<AnalysisReport> analyzeRepo(String repoPath) async {
-    final response = await _dio.post(
-      "/analysis/analyze",
-      data: {"repo_path": repoPath, "export_format": "json"},
-      options: await _authOptions(),
-    );
-
-    final data = response.data as Map<String, dynamic>;
-    if (data['status'] != 'success') {
-      debugPrint('API analyzeRepo error: ${data['error']}');
-      throw Exception(data['error'] ?? 'Analysis failed');
-    }
-
-    return AnalysisReport.fromJson(data['report'] as Map<String, dynamic>);
+    return _analyze({"repo_path": repoPath, "export_format": "json"});
   }
 
   Future<AnalysisReport> analyzeRepoUrl(String repoUrl) async {
-    final response = await _dio.post(
-      "/analysis/analyze",
-      data: {"repo_url": repoUrl, "export_format": "json"},
-      options: await _authOptions(),
-    );
+    return _analyze({"repo_url": repoUrl, "export_format": "json"});
+  }
 
-    final data = response.data as Map<String, dynamic>;
-    if (data['status'] != 'success') {
-      debugPrint('API analyzeRepoUrl error: ${data['error']}');
-      throw Exception(data['error'] ?? 'Analysis failed');
+  Future<AnalysisReport> _analyze(Map<String, dynamic> payload) async {
+    try {
+      final response = await _dio.post(
+        "/analysis/analyze",
+        data: payload,
+        options: await _authOptions(),
+      );
+
+      final data = Map<String, dynamic>.from(response.data as Map);
+      final status = data['status']?.toString();
+
+      if (status == 'success') {
+        return AnalysisReport.fromJson(
+          Map<String, dynamic>.from(data['data'] as Map? ?? const {}),
+        );
+      }
+
+      throw AnalysisApiException(
+        errorType: data['error_type']?.toString() ?? 'unknown_error',
+        message: data['message']?.toString() ?? 'Analysis failed.',
+      );
+    } on DioException catch (e) {
+      final responseData = e.response?.data;
+      if (responseData is Map) {
+        final data = Map<String, dynamic>.from(responseData);
+        throw AnalysisApiException(
+          errorType: data['error_type']?.toString() ?? 'unknown_error',
+          message: data['message']?.toString() ?? 'Analysis failed.',
+        );
+      }
+
+      if (e.type == DioExceptionType.connectionTimeout ||
+          e.type == DioExceptionType.receiveTimeout ||
+          e.type == DioExceptionType.sendTimeout) {
+        throw AnalysisApiException(
+          errorType: 'timeout',
+          message: 'Analysis timed out.',
+        );
+      }
+
+      if (e.type == DioExceptionType.connectionError ||
+          e.type == DioExceptionType.unknown) {
+        throw AnalysisApiException(
+          errorType: 'network_error',
+          message: 'Network error while contacting analysis service.',
+        );
+      }
+      throw AnalysisApiException(
+        errorType: 'unknown_error',
+        message: 'Analysis request failed.',
+      );
+    } catch (e) {
+      if (e is AnalysisApiException) {
+        rethrow;
+      }
+      throw AnalysisApiException(
+        errorType: 'unknown_error',
+        message: 'Analysis failed.',
+      );
     }
-
-    return AnalysisReport.fromJson(data['report'] as Map<String, dynamic>);
   }
 }

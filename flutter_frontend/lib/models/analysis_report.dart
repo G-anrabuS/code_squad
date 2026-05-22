@@ -4,29 +4,74 @@ class AnalysisReport {
   AnalysisReport({required this.raw});
 
   factory AnalysisReport.fromJson(Map<String, dynamic> json) {
-    if (json.containsKey('status') && json.containsKey('report')) {
-      return AnalysisReport(raw: json['report'] as Map<String, dynamic>);
-    }
     return AnalysisReport(raw: json);
   }
 
   Map<String, dynamic> get report => raw;
 
-  Map<String, dynamic> get repositoryInfo => report["repository_info"] ?? {};
+  String get repoId => report['repo_id']?.toString() ?? '';
+  String get timestamp => report['timestamp']?.toString() ?? '';
 
-  Map<String, dynamic> get projectSummary => report["project_summary"] ?? {};
+  Map<String, dynamic> get repositoryInfo =>
+      Map<String, dynamic>.from(report['repository_info'] ?? const {});
 
-  Map<String, dynamic> get architectureAnalysis =>
-      report["architecture_analysis"] ?? {};
+  Map<String, dynamic> get repoContext =>
+      Map<String, dynamic>.from(report['repo_context'] ?? const {});
 
-  Map<String, dynamic> get codeQuality =>
-      report["code_quality_assessment"] ?? {};
+  double get overallScore => (report['overall_score'] as num?)?.toDouble() ?? 0.0;
 
-  Map<String, dynamic> get performance => report["performance_analysis"] ?? {};
+  Map<String, dynamic> get summary =>
+      Map<String, dynamic>.from(report['summary'] ?? const {});
 
-  Map<String, dynamic> get security => report["security_assessment"] ?? {};
+  Map<String, dynamic> get judgeReview =>
+      Map<String, dynamic>.from(report['judge_review'] ?? const {});
 
-  Map<String, dynamic> get recommendations => report["recommendations"] ?? {};
+  Map<String, dynamic> get architectureReview =>
+      Map<String, dynamic>.from(report['architecture_review'] ?? const {});
 
-  List<dynamic> get priorityActions => report["priority_actions"] ?? [];
+  Map<String, dynamic> get performanceReview =>
+      Map<String, dynamic>.from(report['performance_review'] ?? const {});
+
+  Map<String, dynamic> get securityReview =>
+      Map<String, dynamic>.from(report['security_review'] ?? const {});
+
+  List<String> get priorityFixes =>
+      List<String>.from(report['priority_fixes'] ?? const []);
+
+  List<String> get finalRecommendations =>
+      List<String>.from(report['final_recommendations'] ?? const []);
+}
+
+class AnalysisApiException implements Exception {
+  final String errorType;
+  final String message;
+
+  AnalysisApiException({
+    required this.errorType,
+    required this.message,
+  });
+
+  String get userMessage {
+    switch (errorType) {
+      case 'quota_exceeded':
+        return 'AI analysis quota exceeded. Please try again later.';
+      case 'invalid_api_key':
+        return 'Analysis service is not configured correctly.';
+      case 'timeout':
+        return 'Analysis timed out. Please retry.';
+      case 'network_error':
+        return 'Network error while contacting analysis service.';
+      case 'parsing_error':
+        return 'Analysis service returned an unreadable response.';
+      case 'analysis_failed':
+        return 'Analysis could not be completed. Please try again.';
+      case 'unknown_error':
+        return 'Something went wrong while generating the analysis.';
+      default:
+        return message.isNotEmpty ? message : 'Analysis failed.';
+    }
+  }
+
+  @override
+  String toString() => userMessage;
 }

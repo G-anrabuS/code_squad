@@ -1,7 +1,9 @@
 import 'package:flutter/material.dart';
+import '../models/analysis_report.dart';
 import '../models/repo_model.dart';
 import '../services/api_service.dart';
 import '../services/auth_service.dart';
+import '../widgets/app_feedback.dart';
 import 'analysis_report_screen.dart';
 import 'branch_screen.dart';
 import 'login_screen.dart';
@@ -40,9 +42,7 @@ class _RepoScreenState extends State<RepoScreen> {
       repos = await _apiService.getRepos();
     } catch (e) {
       if (!mounted) return;
-      ScaffoldMessenger.of(
-        context,
-      ).showSnackBar(SnackBar(content: Text("Failed to load repos: $e")));
+      showErrorSnackBar(context, "Failed to load repos: $e");
     } finally {
       if (mounted) {
         setState(() => loading = false);
@@ -64,9 +64,7 @@ class _RepoScreenState extends State<RepoScreen> {
   Future<void> _analyzeRepoUrl() async {
     final url = _urlController.text.trim();
     if (url.isEmpty) {
-      ScaffoldMessenger.of(context).showSnackBar(
-        const SnackBar(content: Text('Please enter a GitHub repository URL.')),
-      );
+      showErrorSnackBar(context, 'Please enter a GitHub repository URL.');
       return;
     }
 
@@ -79,12 +77,12 @@ class _RepoScreenState extends State<RepoScreen> {
         context,
         MaterialPageRoute(builder: (_) => AnalysisReportScreen(report: report)),
       );
-    } catch (e) {
-      debugPrint('Analyze URL failed: $e');
+    } on AnalysisApiException catch (e) {
       if (!mounted) return;
-      ScaffoldMessenger.of(
-        context,
-      ).showSnackBar(SnackBar(content: Text('URL analysis failed: $e')));
+      showErrorSnackBar(context, e.userMessage);
+    } catch (_) {
+      if (!mounted) return;
+      showErrorSnackBar(context, 'URL analysis failed. Please try again.');
     } finally {
       if (mounted) {
         setState(() => analyzingUrl = false);

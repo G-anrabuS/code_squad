@@ -1,8 +1,11 @@
 import asyncio
+import logging
 from datetime import datetime
 from typing import Any, Dict, List
 
 from app.schemas.agent_output_schema import (
+    AgentFailure,
+    AgentOutput,
     ArchitectReview,
     JudgeReview,
     PerformanceReview,
@@ -10,6 +13,7 @@ from app.schemas.agent_output_schema import (
     SummaryReview,
 )
 from app.schemas.report_schema import FinalAnalysisReport
+from app.services.analysis_errors import AnalysisError
 from app.services.llm_service import analyze_agent
 from app.services.qdrant_service import build_repo_context, ingest_repository_to_qdrant
 from app.services.retriever_service import retrieve_agent_chunks
@@ -23,36 +27,113 @@ AGENT_MODEL_MAP = {
 }
 
 AGENT_NAMES = ["summary", "judge", "architect", "performance", "security"]
+logger = logging.getLogger(__name__)
 
 
 class CodebaseAnalysisPipeline:
-    """Pipeline orchestrating repository analysis using Qdrant and OpenAI."""
+    """Pipeline orchestrating repository analysis using Qdrant and Gemini."""
 
     async def analyze_repository(self, repo_path: str) -> FinalAnalysisReport:
         repo_context = build_repo_context(repo_path)
 
-        ingestion_summary = ingest_repository_to_qdrant(repo_path)
+        try:
+            ingestion_summary = ingest_repository_to_qdrant(repo_path)
+        except Exception:
+            raise AnalysisError(
+                error_type="unknown_error",
+                message="Failed to prepare repository context for analysis.",
+                http_status=500,
+            ) from None
 
         analysis_tasks = [
-            self._run_agent(agent_name, repo_context) for agent_name in AGENT_NAMES
+            asyncio.create_task(self._run_agent(agent_name, repo_context))
+            for agent_name in AGENT_NAMES
         ]
-        results = await asyncio.gather(*analysis_tasks)
+        results = await asyncio.gather(*analysis_tasks, return_exceptions=False)
 
         agent_outputs = {result["agent_name"]: result["result"] for result in results}
+        if all(result["status"] == "error" for result in results):
+            first_error = next(
+                (
+                    result["result"]
+                    for result in results
+                    if isinstance(result["result"], dict)
+                ),
+                {},
+            )
+            raise AnalysisError(
+                error_type="analysis_failed",
+                message="All analysis agents failed.",
+                http_status=502,
+            ) from None
 
         return self._build_final_report(repo_context, agent_outputs, ingestion_summary)
 
     async def _run_agent(
         self, agent_name: str, repo_context: Dict[str, Any]
     ) -> Dict[str, Any]:
-        chunks = retrieve_agent_chunks(agent_name, repo_context, top_k=6)
-        result = await analyze_agent(
-            agent_name=agent_name,
-            repo_context=repo_context,
-            chunks=chunks,
-            model=AGENT_MODEL_MAP.get(agent_name),
+        label = agent_name.upper()
+        logger.info("[%s] started", label)
+
+        try:
+            chunks = retrieve_agent_chunks(agent_name, repo_context, top_k=6)
+            result = await analyze_agent(
+                agent_name=agent_name,
+                repo_context=repo_context,
+                chunks=chunks,
+                model=AGENT_MODEL_MAP.get(agent_name),
+            )
+            logger.info("[%s] success", label)
+            return {"agent_name": agent_name, "status": "success", "result": result}
+        except AnalysisError as exc:
+            logger.warning("[%s] failed: %s", label, exc.message)
+            return {
+                "agent_name": agent_name,
+                "status": "error",
+                "result": {
+                    "status": "error",
+                    "error_type": exc.error_type,
+                    "message": exc.message,
+                    "agent_name": agent_name,
+                },
+            }
+        except Exception:
+            logger.exception("[%s] failed: unknown error", label)
+            return {
+                "agent_name": agent_name,
+                "status": "error",
+                "result": {
+                    "status": "error",
+                    "error_type": "unknown_error",
+                    "message": f"Gemini analysis failed for {agent_name}.",
+                    "agent_name": agent_name,
+                },
+            }
+
+    def _build_agent_review(
+        self,
+        agent_name: str,
+        data: Dict[str, Any],
+        review_model: Any,
+    ) -> Any:
+        if data.get("status") == "error":
+            return AgentFailure(
+                agent_name=agent_name,
+                message=data.get("message", f"{agent_name} analysis failed."),
+                error_type=data.get("error_type", "agent_failure"),
+            )
+
+        return review_model.model_validate(
+            {
+                "agent_name": agent_name,
+                "summary": data.get("summary", ""),
+                "findings": data.get("findings", {}),
+                "recommendations": data.get("recommendations", []),
+                "insights": data.get("insights", {}),
+                "severity": data.get("severity"),
+                "analysis_details": data.get("analysis_details"),
+            }
         )
-        return {"agent_name": agent_name, "result": result}
 
     def _build_final_report(
         self,
@@ -66,82 +147,61 @@ class CodebaseAnalysisPipeline:
         performance_data = agent_outputs.get("performance", {})
         security_data = agent_outputs.get("security", {})
 
-        summary_review = SummaryReview.parse_obj(
-            {
-                "agent_name": "summary",
-                "summary": summary_data.get("summary", ""),
-                "findings": summary_data.get("findings", {}),
-                "recommendations": summary_data.get("recommendations", []),
-                "insights": summary_data.get("insights", {}),
-                "severity": summary_data.get("severity"),
-                "analysis_details": summary_data.get("analysis_details"),
-            }
+        summary_review = self._build_agent_review(
+            "summary",
+            summary_data,
+            SummaryReview,
         )
 
-        judge_review = JudgeReview.parse_obj(
-            {
-                "agent_name": "judge",
-                "summary": judge_data.get("summary", ""),
-                "findings": judge_data.get("findings", {}),
-                "recommendations": judge_data.get("recommendations", []),
-                "insights": judge_data.get("insights", {}),
-                "severity": judge_data.get("severity"),
-                "analysis_details": judge_data.get("analysis_details"),
-            }
+        judge_review = self._build_agent_review(
+            "judge",
+            judge_data,
+            JudgeReview,
         )
 
-        architect_review = ArchitectReview.parse_obj(
-            {
-                "agent_name": "architect",
-                "summary": architect_data.get("summary", ""),
-                "findings": architect_data.get("findings", {}),
-                "recommendations": architect_data.get("recommendations", []),
-                "insights": architect_data.get("insights", {}),
-                "severity": architect_data.get("severity"),
-                "analysis_details": architect_data.get("analysis_details"),
-            }
+        architect_review = self._build_agent_review(
+            "architect",
+            architect_data,
+            ArchitectReview,
         )
 
-        performance_review = PerformanceReview.parse_obj(
-            {
-                "agent_name": "performance",
-                "summary": performance_data.get("summary", ""),
-                "findings": performance_data.get("findings", {}),
-                "recommendations": performance_data.get("recommendations", []),
-                "insights": performance_data.get("insights", {}),
-                "severity": performance_data.get("severity"),
-                "analysis_details": performance_data.get("analysis_details"),
-            }
+        performance_review = self._build_agent_review(
+            "performance",
+            performance_data,
+            PerformanceReview,
         )
 
-        security_review = SecurityReview.parse_obj(
-            {
-                "agent_name": "security",
-                "summary": security_data.get("summary", ""),
-                "findings": security_data.get("findings", {}),
-                "recommendations": security_data.get("recommendations", []),
-                "insights": security_data.get("insights", {}),
-                "severity": security_data.get("severity"),
-                "analysis_details": security_data.get("analysis_details"),
-            }
+        security_review = self._build_agent_review(
+            "security",
+            security_data,
+            SecurityReview,
         )
 
         priority_fixes = []
-        priority_fixes.extend(judge_review.recommendations[:3])
-        priority_fixes.extend(performance_review.recommendations[:3])
-        priority_fixes.extend(security_review.recommendations[:3])
+        if isinstance(judge_review, AgentOutput):
+            priority_fixes.extend(judge_review.recommendations[:3])
+        if isinstance(performance_review, AgentOutput):
+            priority_fixes.extend(performance_review.recommendations[:3])
+        if isinstance(security_review, AgentOutput):
+            priority_fixes.extend(security_review.recommendations[:3])
         priority_fixes = [fix for fix in priority_fixes if fix]
 
         final_recommendations = []
-        final_recommendations.extend(summary_review.recommendations[:2])
-        final_recommendations.extend(architect_review.recommendations[:2])
-        final_recommendations.extend(judge_review.recommendations[:2])
-        final_recommendations.extend(performance_review.recommendations[:2])
-        final_recommendations.extend(security_review.recommendations[:2])
+        for review in [
+            summary_review,
+            architect_review,
+            judge_review,
+            performance_review,
+            security_review,
+        ]:
+            if isinstance(review, AgentOutput):
+                final_recommendations.extend(review.recommendations[:2])
         final_recommendations = [rec for rec in final_recommendations if rec]
 
         overall_score = 0.0
-        if isinstance(judge_review.findings.get("code_quality_score"), (int, float)):
+        if isinstance(judge_review, AgentOutput) and isinstance(
+            judge_review.findings.get("code_quality_score"), (int, float)
+        ):
             overall_score = float(judge_review.findings.get("code_quality_score"))
         if overall_score <= 0:
             overall_score = 70.0
@@ -168,6 +228,6 @@ class CodebaseAnalysisPipeline:
             priority_fixes=priority_fixes,
             improved_architecture=architect_review.findings.get(
                 "improved_architecture", {}
-            ),
+            ) if isinstance(architect_review, AgentOutput) else {},
             final_recommendations=final_recommendations,
         )

@@ -1,5 +1,6 @@
 import 'package:flutter/material.dart';
 import '../services/api_service.dart';
+import '../widgets/app_feedback.dart';
 import 'scan_screen.dart';
 
 class BranchScreen extends StatefulWidget {
@@ -27,9 +28,8 @@ class _BranchScreenState extends State<BranchScreen> {
     try {
       branches = await _apiService.getBranches(widget.repoName);
     } catch (e) {
-      ScaffoldMessenger.of(
-        context,
-      ).showSnackBar(SnackBar(content: Text("Failed to load branches: $e")));
+      if (!mounted) return;
+      showErrorSnackBar(context, "Failed to load branches: $e");
     } finally {
       if (mounted) {
         setState(() => loading = false);

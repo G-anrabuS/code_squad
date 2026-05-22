@@ -13,11 +13,8 @@ dependencies:
 
     cupertino_icons: ^1.0.8
     dio: ^5.9.2
-    flutter_riverpod: ^3.3.1
     flutter_web_auth_2: ^5.0.2
-    fl_chart: ^1.2.0
     shared_preferences: ^2.5.3
-    percent_indicator: ^4.2.5
 
 dev_dependencies:
     flutter_test:

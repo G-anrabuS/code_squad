@@ -33,9 +33,6 @@ _embedding_model = None
 def _get_model() -> SentenceTransformer:
     global _embedding_model
     if _embedding_model is None:
-        print(
-            "Loading local embedding model (this may take a moment the first time)..."
-        )
         _embedding_model = SentenceTransformer(LOCAL_MODEL_NAME)
     return _embedding_model
 

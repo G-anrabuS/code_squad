@@ -1,5 +1,7 @@
 from fastapi import APIRouter, Depends, HTTPException
+
 from app.core.auth_dependency import get_current_user
+from app.models.scan import ScanRepoRequest
 from app.services.clone_service import clone_repo, clone_repo_from_url
 from app.services.parser_service import get_relevant_files
 
@@ -7,14 +9,17 @@ router = APIRouter()
 
 
 @router.post("/repo")
-async def scan_repo(payload: dict, user=Depends(get_current_user)):
-    repo_url = payload.get("repo_url")
-    branch = payload.get("branch", "main")
+async def scan_repo(payload: ScanRepoRequest, user=Depends(get_current_user)):
+    repo_url = payload.repo_url
+    branch = payload.branch
 
     if repo_url:
         repo_path = clone_repo_from_url(repo_url=repo_url, branch=branch)
     else:
-        full_repo_name = payload["repo_name"]
+        if not payload.repo_name:
+            raise HTTPException(status_code=400, detail="repo_name is required.")
+
+        full_repo_name = payload.repo_name
 
         if "/" in full_repo_name:
             owner, repo = full_repo_name.split("/", 1)
