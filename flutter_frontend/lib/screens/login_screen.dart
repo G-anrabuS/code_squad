@@ -1,6 +1,8 @@
 import 'package:flutter/foundation.dart';
 import 'package:flutter/material.dart';
+import 'package:dio/dio.dart';
 import 'package:flutter_web_auth_2/flutter_web_auth_2.dart';
+import '../config/api_config.dart';
 import '../services/auth_service.dart';
 import 'repo_screen.dart';
 
@@ -24,7 +26,7 @@ class _LoginScreenState extends State<LoginScreen> {
       if (kIsWeb) {
         result = await FlutterWebAuth2.authenticate(
           url:
-              "https://code-squad-backend.onrender.com/auth/github/login"
+              "${ApiConfig.baseUrl}/auth/github/login"
               "?platform=web"
               "&web_origin=${Uri.encodeComponent(Uri.base.origin)}",
           callbackUrlScheme: "https",
@@ -32,20 +34,28 @@ class _LoginScreenState extends State<LoginScreen> {
       } else {
         result = await FlutterWebAuth2.authenticate(
           url:
-              "https://code-squad-backend.onrender.com/auth/github/login?platform=mobile",
+              "${ApiConfig.baseUrl}/auth/github/login?platform=mobile",
           callbackUrlScheme: "codesquad",
         );
       }
 
-      debugPrint("AUTH RESULT: $result");
-
       final uri = Uri.parse(result);
 
-      final jwt = uri.queryParameters["jwt"];
-      final username = uri.queryParameters["username"];
+      final code = uri.queryParameters["code"];
+
+      if (code == null || code.isEmpty) {
+        throw Exception("Login code missing");
+      }
+
+      final response = await Dio(
+        BaseOptions(baseUrl: ApiConfig.baseUrl),
+      ).post("/auth/exchange", data: {"code": code});
+
+      final jwt = response.data["jwt"] as String?;
+      final username = response.data["username"] as String?;
 
       if (jwt == null || username == null) {
-        throw Exception("JWT or username missing");
+        throw Exception("Auth response incomplete");
       }
 
       await _authService.saveAuth(jwt, username);

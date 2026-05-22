@@ -5,6 +5,7 @@
 # Python / FastAPI
 # =========================
 fastapi_backend/venv/
+fastapi_backend/.venv/
 fastapi_backend/__pycache__/
 fastapi_backend/**/*.pyc
 fastapi_backend/.env

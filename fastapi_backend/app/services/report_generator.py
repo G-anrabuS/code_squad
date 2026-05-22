@@ -1,9 +1,18 @@
 """
 Report Generator - Creates final comprehensive analysis report.
 """
-from typing import Dict, Any, List
+from typing import Dict, Any, List, Optional
 from datetime import datetime
+from pathlib import Path
 from pydantic import BaseModel
+import openai
+from reportlab.lib import colors
+from reportlab.lib.pagesizes import letter
+from reportlab.lib.styles import getSampleStyleSheet, ParagraphStyle
+from reportlab.lib.units import inch
+from reportlab.platypus import SimpleDocTemplate, Paragraph, Spacer, Table, TableStyle
+
+from app.core.config import OPENAI_API_KEY, OPENAI_LLM_MODEL
 
 
 class ComprehensiveReport(BaseModel):
@@ -18,6 +27,7 @@ class ComprehensiveReport(BaseModel):
     security_assessment: Dict[str, Any]
     recommendations: Dict[str, Any]
     priority_actions: List[str]
+    llm_summary: Optional[str] = None
 
 
 class ReportGenerator:
@@ -37,7 +47,8 @@ class ReportGenerator:
             recommendations=self._format_recommendations(agents_findings),
             priority_actions=self._generate_priority_actions(agents_findings),
         )
-        
+        report.llm_summary = self._generate_llm_summary(report)
+
         return report
     
     def _format_repository_info(self, codebase_data: Dict[str, Any]) -> Dict[str, Any]:
@@ -177,9 +188,163 @@ class ReportGenerator:
         
         return actions[:10]  # Top 10 priority actions
     
+    def _configure_openai(self) -> None:
+        if not OPENAI_API_KEY:
+            raise ValueError("OPENAI_API_KEY is not set. Please add OPENAI_API_KEY to .env.")
+        openai.api_key = OPENAI_API_KEY
+
+    def _generate_llm_summary(self, report: ComprehensiveReport) -> str:
+        """Generate an executive report summary using the configured LLM."""
+        try:
+            self._configure_openai()
+            prompt = self._build_llm_summary_prompt(report)
+            response = openai.ChatCompletion.create(
+                model=OPENAI_LLM_MODEL,
+                messages=[
+                    {"role": "system", "content": "You are an expert software engineering report writer."},
+                    {"role": "user", "content": prompt},
+                ],
+                temperature=0.2,
+                max_tokens=450,
+            )
+            return response.choices[0].message.content.strip()
+        except Exception:
+            return self._build_default_summary(report)
+
+    def _build_llm_summary_prompt(self, report: ComprehensiveReport) -> str:
+        return (
+            "Create a concise executive summary for a software codebase analysis report. "
+            "Use the structured report data below to highlight the key findings, risks, opportunities, and next steps. "
+            "Keep the summary under 250 words and write in clear, professional language.\n\n"
+            "Repository Info:\n"
+            f"Project Type: {report.repository_info.get('project_type')}\n"
+            f"Tech Stack: {', '.join(report.repository_info.get('tech_stack', []))}\n"
+            f"Total Files: {report.repository_info.get('total_files')}\n\n"
+            "Project Summary:\n"
+            f"Overview: {report.project_summary.get('overview')}\n"
+            f"Major Modules: {', '.join(report.project_summary.get('major_modules', []))}\n"
+            f"Architecture Flow: {report.project_summary.get('architecture_flow')}\n\n"
+            "Architecture Findings:\n"
+            f"Current Pattern: {report.architecture_analysis.get('current_pattern')}\n"
+            f"Maturity: {report.architecture_analysis.get('maturity')}\n"
+            f"Complexity: {report.architecture_analysis.get('complexity')}\n"
+            f"Refactoring Opportunities: {', '.join(report.architecture_analysis.get('refactoring_opportunities', [])[:3])}\n\n"
+            "Code Quality Findings:\n"
+            f"Overall Score: {report.code_quality_assessment.get('overall_score')}\n"
+            f"Technical Debt: {', '.join(report.code_quality_assessment.get('technical_debt', [])[:3])}\n\n"
+            "Performance Findings:\n"
+            f"Top Bottlenecks: {', '.join(report.performance_analysis.get('bottlenecks', [])[:3])}\n"
+            f"Optimization Strategies: {', '.join(report.performance_analysis.get('optimization_strategies', [])[:3])}\n\n"
+            "Security Findings:\n"
+            f"Severity Level: {report.security_assessment.get('severity_level')}\n"
+            f"Critical Issues: {', '.join(report.security_assessment.get('critical_vulnerabilities', [])[:3])}\n\n"
+            "Priority Actions:\n"
+            f"{', '.join(report.priority_actions[:5])}\n"
+            "\nProvide the final result as a polished executive summary only."
+        )
+
+    def _build_default_summary(self, report: ComprehensiveReport) -> str:
+        return (
+            "Executive summary generation failed, but the report structure is available. "
+            f"Project type is {report.repository_info.get('project_type')} with {report.repository_info.get('total_files')} files. "
+            "Review the architecture, performance, and security sections for details."
+        )
+
     def to_dict(self, report: ComprehensiveReport) -> Dict[str, Any]:
         """Convert report to dictionary."""
         return report.dict()
+
+    def to_pdf(self, report: ComprehensiveReport, output_path: str = "report.pdf") -> str:
+        """Generate a PDF file from the report and return the file path."""
+        output_file = Path(output_path)
+        output_file.parent.mkdir(parents=True, exist_ok=True)
+
+        doc = SimpleDocTemplate(
+            str(output_file),
+            pagesize=letter,
+            rightMargin=72,
+            leftMargin=72,
+            topMargin=72,
+            bottomMargin=72,
+        )
+
+        elements = self._build_pdf_elements(report)
+        doc.build(elements)
+        return str(output_file)
+
+    def _build_pdf_elements(self, report: ComprehensiveReport) -> List[Any]:
+        styles = getSampleStyleSheet()
+        heading = styles["Heading1"]
+        subheading = styles["Heading2"]
+        body = styles["BodyText"]
+        body.spaceAfter = 6
+
+        elements: List[Any] = []
+        elements.append(Paragraph("Comprehensive Codebase Analysis Report", heading))
+        elements.append(Spacer(1, 12))
+        elements.append(Paragraph(f"Generated: {report.timestamp}", body))
+        elements.append(Spacer(1, 12))
+
+        # Executive summary
+        if report.llm_summary:
+            elements.append(Paragraph("Executive Summary", subheading))
+            elements.append(Paragraph(report.llm_summary, body))
+            elements.append(Spacer(1, 12))
+
+        elements.append(Paragraph("Repository Overview", subheading))
+        elements.append(Paragraph(
+            f"Project Type: {report.repository_info.get('project_type')}<br/>"
+            f"Tech Stack: {', '.join(report.repository_info.get('tech_stack', []))}<br/>"
+            f"Total Files: {report.repository_info.get('total_files')}"
+        , body))
+        elements.append(Spacer(1, 12))
+
+        elements.append(Paragraph("Key Findings", subheading))
+        elements.append(Paragraph("Architecture Summary:", styles["Heading3"]))
+        elements.append(Paragraph(
+            f"Pattern: {report.architecture_analysis.get('current_pattern')}<br/>"
+            f"Maturity: {report.architecture_analysis.get('maturity')}<br/>"
+            f"Complexity: {report.architecture_analysis.get('complexity')}"
+        , body))
+        elements.append(Spacer(1, 8))
+
+        elements.append(Paragraph("Code Quality Summary:", styles["Heading3"]))
+        elements.append(Paragraph(
+            f"Overall Score: {report.code_quality_assessment.get('overall_score')}<br/>"
+            f"Maintainability: {report.code_quality_assessment.get('maintainability')}<br/>"
+            f"Scalability: {report.code_quality_assessment.get('scalability')}<br/>"
+            f"Readability: {report.code_quality_assessment.get('readability')}"
+        , body))
+        elements.append(Spacer(1, 8))
+
+        elements.append(Paragraph("Performance Summary:", styles["Heading3"]))
+        elements.append(Paragraph(
+            f"Bottlenecks: {', '.join(report.performance_analysis.get('bottlenecks', [])[:3])}<br/>"
+            f"Optimization Strategies: {', '.join(report.performance_analysis.get('optimization_strategies', [])[:3])}"
+        , body))
+        elements.append(Spacer(1, 8))
+
+        elements.append(Paragraph("Security Summary:", styles["Heading3"]))
+        elements.append(Paragraph(
+            f"Severity Level: {report.security_assessment.get('severity_level')}<br/>"
+            f"Critical Issues: {', '.join(report.security_assessment.get('critical_vulnerabilities', [])[:3])}"
+        , body))
+        elements.append(Spacer(1, 12))
+
+        elements.append(Paragraph("Priority Actions", subheading))
+        for action in report.priority_actions:
+            elements.append(Paragraph(f"- {action}", body))
+        elements.append(Spacer(1, 12))
+
+        elements.append(Paragraph("Detailed Recommendations", subheading))
+        for section_name, recommendations in report.recommendations.items():
+            if recommendations:
+                elements.append(Paragraph(section_name.replace('_', ' ').title(), styles["Heading3"]))
+                for rec in recommendations:
+                    elements.append(Paragraph(f"• {rec}", body))
+                elements.append(Spacer(1, 8))
+
+        return elements
     
     def to_markdown(self, report: ComprehensiveReport) -> str:
         """Convert report to markdown format."""
@@ -203,7 +368,7 @@ class ReportGenerator:
 
 ## 📖 Project Summary
 
-{report.project_summary['overview']}
+{report.llm_summary or report.project_summary['overview']}
 
 ### Major Modules
 {chr(10).join(f'- {m}' for m in report.project_summary['major_modules'])}

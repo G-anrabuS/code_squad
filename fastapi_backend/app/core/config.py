@@ -1,3 +1,4 @@
+import json
 import os
 from dotenv import load_dotenv
 
@@ -6,3 +7,17 @@ load_dotenv(dotenv_path=".env")
 GITHUB_CLIENT_ID = os.getenv("GITHUB_CLIENT_ID")
 GITHUB_CLIENT_SECRET = os.getenv("GITHUB_CLIENT_SECRET")
 JWT_SECRET = os.getenv("JWT_SECRET")
+
+OPENAI_API_KEY = os.getenv("OPENAI_API_KEY")
+OPENAI_EMBEDDING_MODEL = os.getenv("OPENAI_EMBEDDING_MODEL", "text-embedding-3-small")
+OPENAI_LLM_MODEL = os.getenv("OPENAI_LLM_MODEL", "gemini-1.5")
+
+try:
+    OPENAI_LLM_MODEL_MAP = json.loads(os.getenv("OPENAI_LLM_MODEL_MAP", "{}") or "{}")
+except json.JSONDecodeError:
+    OPENAI_LLM_MODEL_MAP = {}
+
+QDRANT_URL = os.getenv("QDRANT_URL", "http://localhost:6333")
+QDRANT_API_KEY = os.getenv("QDRANT_API_KEY")
+QDRANT_COLLECTION = os.getenv("QDRANT_COLLECTION", "codebase")
+QDRANT_DISTANCE = os.getenv("QDRANT_DISTANCE", "Cosine")

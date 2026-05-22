@@ -1,8 +1,9 @@
-from fastapi import APIRouter, Request
+from fastapi import APIRouter, HTTPException, Request
 from authlib.integrations.starlette_client import OAuth
 from app.core.config import GITHUB_CLIENT_ID, GITHUB_CLIENT_SECRET
 import httpx
 from app.core.security import create_access_token
+from app.core.token_store import consume_pending_login, create_pending_login
 from fastapi.responses import RedirectResponse
 
 router = APIRouter()
@@ -46,8 +47,9 @@ async def github_callback(
         user_res = await client.get("https://api.github.com/user", headers=headers)
 
     user = user_res.json()
-    app_token = create_access_token(
-        {"github_token": access_token, "github_username": user["login"]}
+    login_code = create_pending_login(
+        github_username=user["login"],
+        github_token=access_token,
     )
 
     if platform == "web":
@@ -58,9 +60,33 @@ async def github_callback(
             # PUT YOUR ACTUAL FIREBASE URL HERE
             base_url = "https://codesquad-88e63.web.app/"
 
-        redirect_url = f"{base_url}/auth.html?jwt={app_token}&username={user['login']}"
+        redirect_url = f"{base_url}/auth.html?code={login_code}"
     else:
         # Android / iOS behavior
-        redirect_url = f"codesquad://callback?jwt={app_token}&username={user['login']}"
+        redirect_url = f"codesquad://callback?code={login_code}"
 
     return RedirectResponse(url=redirect_url)
+
+
+@router.post("/exchange")
+async def exchange_login_code(payload: dict):
+    login_code = payload.get("code")
+    if not login_code:
+        raise HTTPException(status_code=400, detail="Login code is required")
+
+    session = consume_pending_login(login_code)
+    if not session:
+        raise HTTPException(status_code=401, detail="Invalid or expired login code")
+
+    app_token = create_access_token(
+        {
+            "sub": session["github_username"],
+            "github_username": session["github_username"],
+            "session_id": session["session_id"],
+        }
+    )
+
+    return {
+        "jwt": app_token,
+        "username": session["github_username"],
+    }

@@ -4,10 +4,13 @@ class AnalysisReport {
   AnalysisReport({required this.raw});
 
   factory AnalysisReport.fromJson(Map<String, dynamic> json) {
+    if (json.containsKey('status') && json.containsKey('report')) {
+      return AnalysisReport(raw: json['report'] as Map<String, dynamic>);
+    }
     return AnalysisReport(raw: json);
   }
 
-  Map<String, dynamic> get report => raw["report"] ?? {};
+  Map<String, dynamic> get report => raw;
 
   Map<String, dynamic> get repositoryInfo => report["repository_info"] ?? {};
 

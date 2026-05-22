@@ -39,6 +39,7 @@ class _ScanScreenState extends State<ScanScreen> {
         ),
       );
     } catch (e) {
+      debugPrint('Scan repo failed: $e');
       ScaffoldMessenger.of(
         context,
       ).showSnackBar(SnackBar(content: Text("Scan failed: $e")));

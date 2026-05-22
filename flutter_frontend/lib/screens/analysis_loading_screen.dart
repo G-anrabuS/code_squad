@@ -34,11 +34,11 @@ class _AnalysisLoadingScreenState extends State<AnalysisLoadingScreen> {
         MaterialPageRoute(builder: (_) => AnalysisReportScreen(report: report)),
       );
     } catch (e) {
+      debugPrint('Analysis request failed: $e');
       if (!mounted) return;
 
-      ScaffoldMessenger.of(
-        context,
-      ).showSnackBar(SnackBar(content: Text("Analysis failed: $e")));
+      ScaffoldMessenger.of(context)
+          .showSnackBar(SnackBar(content: Text("Analysis failed: $e")));
 
       Navigator.pop(context);
     }
@@ -46,23 +46,63 @@ class _AnalysisLoadingScreenState extends State<AnalysisLoadingScreen> {
 
   @override
   Widget build(BuildContext context) {
+    final steps = [
+      'Reading codebase',
+      'Summary Agent running',
+      'Judge Agent pending',
+      'Architect Agent pending',
+      'Security Agent pending',
+      'Performance Agent pending',
+      'Generating final report',
+    ];
+
     return Scaffold(
+      appBar: AppBar(title: const Text('Analyzing Repository')),
       body: Center(
         child: Padding(
           padding: const EdgeInsets.all(24),
           child: Column(
             mainAxisAlignment: MainAxisAlignment.center,
-            children: const [
-              CircularProgressIndicator(),
-              SizedBox(height: 24),
-              Text(
-                "Analyzing Codebase...",
+            children: [
+              const SizedBox(height: 18),
+              const CircularProgressIndicator(strokeWidth: 4),
+              const SizedBox(height: 24),
+              const Text(
+                'Analyzing Codebase...',
                 style: TextStyle(fontSize: 24, fontWeight: FontWeight.bold),
               ),
-              SizedBox(height: 12),
-              Text(
-                "Running heuristic AI agents\nSecurity • Performance • Architecture",
+              const SizedBox(height: 12),
+              const Text(
+                'AI agents are processing the repository and building the report.',
                 textAlign: TextAlign.center,
+              ),
+              const SizedBox(height: 32),
+              Expanded(
+                child: ListView.separated(
+                  itemCount: steps.length,
+                  separatorBuilder: (_, __) => const Divider(height: 24),
+                  itemBuilder: (context, index) {
+                    final stage = steps[index];
+                    final active = index <= 1;
+                    return ListTile(
+                      leading: CircleAvatar(
+                        backgroundColor: active
+                            ? Theme.of(context).colorScheme.primary
+                            : Theme.of(context).colorScheme.surfaceVariant,
+                        child: Icon(
+                          active ? Icons.check : Icons.timelapse,
+                          color: active ? Colors.white : null,
+                          size: 18,
+                        ),
+                      ),
+                      title: Text(stage),
+                      subtitle: Text(
+                        active ? 'In progress' : 'Waiting',
+                        style: const TextStyle(fontSize: 12),
+                      ),
+                    );
+                  },
+                ),
               ),
             ],
           ),

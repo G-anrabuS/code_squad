@@ -1,4 +1,5 @@
 import 'package:dio/dio.dart';
+import 'package:flutter/foundation.dart';
 import '../config/api_config.dart';
 import '../models/repo_model.dart';
 import '../models/analysis_report.dart';
@@ -56,6 +57,28 @@ class ApiService {
       options: await _authOptions(),
     );
 
-    return AnalysisReport.fromJson(response.data);
+    final data = response.data as Map<String, dynamic>;
+    if (data['status'] != 'success') {
+      debugPrint('API analyzeRepo error: ${data['error']}');
+      throw Exception(data['error'] ?? 'Analysis failed');
+    }
+
+    return AnalysisReport.fromJson(data['report'] as Map<String, dynamic>);
+  }
+
+  Future<AnalysisReport> analyzeRepoUrl(String repoUrl) async {
+    final response = await _dio.post(
+      "/analysis/analyze",
+      data: {"repo_url": repoUrl, "export_format": "json"},
+      options: await _authOptions(),
+    );
+
+    final data = response.data as Map<String, dynamic>;
+    if (data['status'] != 'success') {
+      debugPrint('API analyzeRepoUrl error: ${data['error']}');
+      throw Exception(data['error'] ?? 'Analysis failed');
+    }
+
+    return AnalysisReport.fromJson(data['report'] as Map<String, dynamic>);
   }
 }

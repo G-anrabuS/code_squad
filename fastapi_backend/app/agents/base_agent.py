@@ -44,3 +44,8 @@ class BaseAnalysisAgent(ABC):
             severity=severity,
             recommendations=recommendations or []
         )
+
+    def heuristic_fallback(self, findings: Dict[str, Any], summary: str,
+                           recommendations: list = None, severity: str = None) -> AgentResponse:
+        """Return a fallback heuristic response when LLM enrichment is unavailable."""
+        return self.format_findings(findings, summary, recommendations or [], severity)
