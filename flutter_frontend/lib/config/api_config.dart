@@ -1,3 +1,3 @@
 class ApiConfig {
-  static const String apiBaseUrl = "https://code-squad-backend.onrender.com";
+  static const String baseUrl = "https://code-squad-backend.onrender.com";
 }
