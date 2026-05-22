@@ -18,14 +18,18 @@ from app.services.clone_service import clone_repo_from_url
 from app.services.download_service import render_markdown, render_pdf_bytes, render_json
 from app.services.chat_service import rag_chat
 from app.services.qdrant_service import build_repo_context
+from app.services.task_tracker import (
+    complete_task,
+    create_task,
+    fail_task,
+    get_task,
+    set_task_status,
+    update_step,
+)
 
 
 router = APIRouter(tags=["analysis"])
 logger = logging.getLogger(__name__)
-
-# Store for background task results
-analysis_results: Dict[str, Dict[str, Any]] = {}
-
 
 class AnalysisRequest(BaseModel):
     """Request model for codebase analysis."""
@@ -58,6 +62,12 @@ class AnalysisResponse(BaseModel):
     error_type: Optional[str] = None
     message: Optional[str] = None
     task_id: Optional[str] = None
+
+
+class ProgressResponse(BaseModel):
+    status: str
+    steps: Dict[str, str]
+    message: Optional[str] = None
 
 
 class EmbedRequest(BaseModel):
@@ -225,7 +235,7 @@ async def chat_codebase(request: ChatRequest) -> Dict[str, Any]:
 async def analyze_codebase_background(
     request: AnalysisRequest,
     background_tasks: BackgroundTasks
-) -> Dict[str, str]:
+) -> Dict[str, Any]:
     """
     Analyze codebase in background and return task ID.
 
@@ -233,20 +243,19 @@ async def analyze_codebase_background(
     """
     try:
         repo_path = _resolve_repo_path(request)
-
         task_id = str(uuid.uuid4())
+        repo_name = request.repo_name or os.path.basename(repo_path)
+        create_task(task_id, repo_name)
 
         background_tasks.add_task(
             _run_analysis_background,
             task_id=task_id,
             repo_path=repo_path,
-            export_format=request.export_format,
         )
 
         return {
-            'status': 'started',
+            'status': 'accepted',
             'task_id': task_id,
-            'message': f'Analysis started. Check /analysis/result/{task_id} for results',
         }
     except HTTPException:
         raise
@@ -265,30 +274,59 @@ async def analyze_codebase_background(
 @router.get("/analysis/result/{task_id}")
 async def get_analysis_result(task_id: str) -> Dict[str, Any]:
     """Get results of background analysis task."""
-    if task_id not in analysis_results:
+    task = get_task(task_id)
+    if not task:
         return {
-            'status': 'error',
-            'error_type': 'not_found',
-            'message': f'Task {task_id} not found',
+            'status': 'failed',
+            'message': 'Invalid or expired task id.',
         }
-    return analysis_results[task_id]
+
+    if task['status'] in {'pending', 'running'}:
+        return {'status': 'running'}
+
+    if task['status'] == 'completed':
+        return {
+            'status': 'completed',
+            'data': task.get('data'),
+        }
+
+    return {
+        'status': 'failed',
+        'message': task.get('message') or 'Analysis failed',
+    }
+
+
+@router.get("/progress/{task_id}", response_model=ProgressResponse)
+async def get_analysis_progress(task_id: str) -> Dict[str, Any]:
+    task = get_task(task_id)
+    if not task:
+        return {
+            'status': 'failed',
+            'steps': {},
+            'message': 'Invalid or expired task id.',
+        }
+
+    return {
+        'status': task['status'],
+        'steps': task.get('steps', {}),
+        'message': task.get('message'),
+    }
 
 
 @router.get("/analysis/summary/{task_id}")
 async def get_analysis_summary(task_id: str) -> Dict[str, Any]:
     """Get summary of analysis without full details."""
-    if task_id not in analysis_results:
+    task = get_task(task_id)
+    if not task:
         raise HTTPException(status_code=404, detail=f'Task {task_id} not found')
 
-    result = analysis_results[task_id]
-    if result['status'] != 'success':
+    if task['status'] != 'completed':
         return {
-            'status': result['status'],
-            'error_type': result.get('error_type'),
-            'message': result.get('message'),
+            'status': task['status'],
+            'message': task.get('message'),
         }
 
-    report = result['data']
+    report = task['data']
     return {
         'status': 'success',
         'timestamp': report.get('timestamp'),
@@ -317,29 +355,27 @@ def _resolve_repo_path(request: AnalysisRequest) -> str:
     raise HTTPException(status_code=400, detail="repo_path or repo_url is required for analysis.")
 
 
-async def _run_analysis_background(task_id: str, repo_path: str, export_format: str = 'json') -> None:
+async def _run_analysis_background(task_id: str, repo_path: str) -> None:
     """Run analysis in background and store results."""
     try:
-        analysis_results[task_id] = {'status': 'processing'}
-
-        report = await run_full_analysis(repo_path)
-        if export_format == 'markdown':
-            report_data = {'markdown': render_markdown(report.dict()), 'type': 'markdown'}
-        else:
-            report_data = report.dict()
-            report_data['type'] = 'json'
-
-        analysis_results[task_id] = {
-            'status': 'success',
-            'data': report_data,
-            'timestamp': report_data.get('timestamp'),
-        }
+        set_task_status(task_id, 'running')
+        report = await run_full_analysis(repo_path, progress_callback=lambda step, status, message=None: _update_task_progress(task_id, step, status, message))
+        report_data = report.model_dump()
+        report_data['type'] = 'json'
+        complete_task(task_id, report_data)
     except AnalysisError as exc:
-        analysis_results[task_id] = exc.to_response()
+        fail_task(task_id, exc.message)
     except Exception:
         logger.exception("Background analysis failed unexpectedly")
-        analysis_results[task_id] = AnalysisError(
-            error_type='unknown_error',
-            message='Background analysis failed unexpectedly.',
-            http_status=500,
-        ).to_response()
+        fail_task(task_id, 'Background analysis failed unexpectedly.')
+
+
+def _update_task_progress(
+    task_id: str,
+    step: str,
+    status: str,
+    message: Optional[str] = None,
+) -> None:
+    if status == 'running':
+        set_task_status(task_id, 'running')
+    update_step(task_id, step, status, message)

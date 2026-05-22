@@ -5,12 +5,16 @@ import 'package:flutter/services.dart';
 
 import '../models/analysis_report.dart';
 
+import 'package:pdf/widgets.dart' as pw;
+import 'package:printing/printing.dart';
+
 class AnalysisReportScreen extends StatelessWidget {
   final AnalysisReport report;
 
   const AnalysisReportScreen({super.key, required this.report});
 
-  bool _agentFailed(Map<String, dynamic> section) => section['status'] == 'error';
+  bool _agentFailed(Map<String, dynamic> section) =>
+      section['status'] == 'error';
 
   String _agentUnavailableTitle(String title) {
     switch (title) {
@@ -39,7 +43,56 @@ class AnalysisReportScreen extends StatelessWidget {
     }
   }
 
-  Widget _sectionCard(BuildContext context, String title, List<Widget> children) {
+  Future<void> _downloadPdf() async {
+    final pdf = pw.Document();
+
+    pdf.addPage(
+      pw.MultiPage(
+        build: (context) => [
+          pw.Header(level: 0, child: pw.Text("Code Squad Analysis Report")),
+
+          pw.Text("Repository ID: ${report.repoId}"),
+          pw.Text(
+            "Project Type: ${report.repositoryInfo['project_type'] ?? 'Unknown'}",
+          ),
+          pw.Text("Total Files: ${report.repositoryInfo['total_files'] ?? 0}"),
+          pw.Text("Overall Score: ${report.overallScore}"),
+          pw.SizedBox(height: 20),
+
+          pw.Header(level: 1, child: pw.Text("Summary")),
+          pw.Text(report.summary['summary'] ?? "Unavailable"),
+
+          pw.Header(level: 1, child: pw.Text("Judge Review")),
+          pw.Text(report.judgeReview['summary'] ?? "Unavailable"),
+
+          pw.Header(level: 1, child: pw.Text("Architecture Review")),
+          pw.Text(report.architectureReview['summary'] ?? "Unavailable"),
+
+          pw.Header(level: 1, child: pw.Text("Performance Review")),
+          pw.Text(report.performanceReview['summary'] ?? "Unavailable"),
+
+          pw.Header(level: 1, child: pw.Text("Security Review")),
+          pw.Text(report.securityReview['summary'] ?? "Unavailable"),
+
+          pw.Header(level: 1, child: pw.Text("Priority Fixes")),
+          ...report.priorityFixes.map((e) => pw.Bullet(text: e.toString())),
+
+          pw.Header(level: 1, child: pw.Text("Final Recommendations")),
+          ...report.finalRecommendations.map(
+            (e) => pw.Bullet(text: e.toString()),
+          ),
+        ],
+      ),
+    );
+
+    await Printing.layoutPdf(onLayout: (format) async => pdf.save());
+  }
+
+  Widget _sectionCard(
+    BuildContext context,
+    String title,
+    List<Widget> children,
+  ) {
     final scheme = Theme.of(context).colorScheme;
     return Card(
       color: scheme.surfaceContainerLow,
@@ -230,20 +283,16 @@ class AnalysisReportScreen extends StatelessWidget {
     Map<String, dynamic> section,
   ) {
     if (_agentFailed(section)) {
-      return _sectionCard(
-        context,
-        title,
-        [
-          Text(
-            _agentUnavailableTitle(title),
-            style: Theme.of(context).textTheme.titleMedium?.copyWith(
-              fontWeight: FontWeight.w700,
-            ),
-          ),
-          const SizedBox(height: 8),
-          Text(section['message']?.toString() ?? 'This analysis is unavailable.'),
-        ],
-      );
+      return _sectionCard(context, title, [
+        Text(
+          _agentUnavailableTitle(title),
+          style: Theme.of(
+            context,
+          ).textTheme.titleMedium?.copyWith(fontWeight: FontWeight.w700),
+        ),
+        const SizedBox(height: 8),
+        Text(section['message']?.toString() ?? 'This analysis is unavailable.'),
+      ]);
     }
 
     final summary = section['summary']?.toString() ?? 'No summary available.';
@@ -253,42 +302,35 @@ class AnalysisReportScreen extends StatelessWidget {
     );
     final severity = section['severity']?.toString();
 
-    return _sectionCard(
-      context,
-      title,
-      [
-        Row(
-          children: [
-            Expanded(
-              child: Text(
-                summary,
-                style: Theme.of(context).textTheme.bodyLarge,
-              ),
-            ),
-            const SizedBox(width: 12),
-            _severityBadge(context, severity),
-          ],
-        ),
-        const SizedBox(height: 16),
-        Text(
-          'Findings',
-          style: Theme.of(
-            context,
-          ).textTheme.titleMedium?.copyWith(fontWeight: FontWeight.w700),
-        ),
-        const SizedBox(height: 8),
-        ..._findingsWidgets(findings),
-        const SizedBox(height: 12),
-        Text(
-          'Recommendations',
-          style: Theme.of(
-            context,
-          ).textTheme.titleMedium?.copyWith(fontWeight: FontWeight.w700),
-        ),
-        const SizedBox(height: 8),
-        _recommendationList(recommendations),
-      ],
-    );
+    return _sectionCard(context, title, [
+      Row(
+        children: [
+          Expanded(
+            child: Text(summary, style: Theme.of(context).textTheme.bodyLarge),
+          ),
+          const SizedBox(width: 12),
+          _severityBadge(context, severity),
+        ],
+      ),
+      const SizedBox(height: 16),
+      Text(
+        'Findings',
+        style: Theme.of(
+          context,
+        ).textTheme.titleMedium?.copyWith(fontWeight: FontWeight.w700),
+      ),
+      const SizedBox(height: 8),
+      ..._findingsWidgets(findings),
+      const SizedBox(height: 12),
+      Text(
+        'Recommendations',
+        style: Theme.of(
+          context,
+        ).textTheme.titleMedium?.copyWith(fontWeight: FontWeight.w700),
+      ),
+      const SizedBox(height: 8),
+      _recommendationList(recommendations),
+    ]);
   }
 
   Widget _stringListSection(
@@ -296,13 +338,12 @@ class AnalysisReportScreen extends StatelessWidget {
     String title,
     List<String> items,
   ) {
-    return _sectionCard(
-      context,
-      title,
-      [
-        if (items.isEmpty) const Text('No items available.') else _recommendationList(items),
-      ],
-    );
+    return _sectionCard(context, title, [
+      if (items.isEmpty)
+        const Text('No items available.')
+      else
+        _recommendationList(items),
+    ]);
   }
 
   @override
@@ -319,6 +360,11 @@ class AnalysisReportScreen extends StatelessWidget {
             icon: const Icon(Icons.copy_all_rounded),
             onPressed: () => _copyJson(context),
           ),
+          IconButton(
+            icon: const Icon(Icons.picture_as_pdf),
+            tooltip: 'Download PDF',
+            onPressed: _downloadPdf,
+          ),
         ],
       ),
       body: SingleChildScrollView(
@@ -326,31 +372,27 @@ class AnalysisReportScreen extends StatelessWidget {
         child: Column(
           crossAxisAlignment: CrossAxisAlignment.start,
           children: [
-            _sectionCard(
-              context,
-              'Overview',
-              [
-                _scoreBadge(context),
-                const SizedBox(height: 16),
-                _overviewRow(context, 'Repo ID', report.repoId),
-                _overviewRow(context, 'Timestamp', report.timestamp),
-                _overviewRow(
-                  context,
-                  'Project Type',
-                  repoInfo['project_type']?.toString() ?? 'Unknown',
-                ),
-                _overviewRow(
-                  context,
-                  'Total Files',
-                  repoInfo['total_files']?.toString() ?? '0',
-                ),
-                _overviewRow(
-                  context,
-                  'Tech Stack',
-                  techStack.isEmpty ? 'Unknown' : techStack.join(', '),
-                ),
-              ],
-            ),
+            _sectionCard(context, 'Overview', [
+              _scoreBadge(context),
+              const SizedBox(height: 16),
+              _overviewRow(context, 'Repo ID', report.repoId),
+              _overviewRow(context, 'Timestamp', report.timestamp),
+              _overviewRow(
+                context,
+                'Project Type',
+                repoInfo['project_type']?.toString() ?? 'Unknown',
+              ),
+              _overviewRow(
+                context,
+                'Total Files',
+                repoInfo['total_files']?.toString() ?? '0',
+              ),
+              _overviewRow(
+                context,
+                'Tech Stack',
+                techStack.isEmpty ? 'Unknown' : techStack.join(', '),
+              ),
+            ]),
             _agentSection(context, 'Summary Agent', report.summary),
             _agentSection(context, 'Judge Review', report.judgeReview),
             _agentSection(

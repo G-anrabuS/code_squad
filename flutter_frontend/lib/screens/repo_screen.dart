@@ -4,7 +4,7 @@ import '../models/repo_model.dart';
 import '../services/api_service.dart';
 import '../services/auth_service.dart';
 import '../widgets/app_feedback.dart';
-import 'analysis_report_screen.dart';
+import 'analysis_loading_screen.dart';
 import 'branch_screen.dart';
 import 'login_screen.dart';
 
@@ -70,12 +70,14 @@ class _RepoScreenState extends State<RepoScreen> {
 
     try {
       setState(() => analyzingUrl = true);
-      final report = await _apiService.analyzeRepoUrl(url);
+      final taskId = await _apiService.startBackgroundAnalysis(repoUrl: url);
 
       if (!mounted) return;
       Navigator.push(
         context,
-        MaterialPageRoute(builder: (_) => AnalysisReportScreen(report: report)),
+        MaterialPageRoute(
+          builder: (_) => AnalysisLoadingScreen(taskId: taskId),
+        ),
       );
     } on AnalysisApiException catch (e) {
       if (!mounted) return;

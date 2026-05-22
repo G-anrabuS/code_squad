@@ -57,6 +57,65 @@ class ApiService {
     return _analyze({"repo_url": repoUrl, "export_format": "json"});
   }
 
+  Future<String> startBackgroundAnalysis({
+    String? repoPath,
+    String? repoUrl,
+  }) async {
+    try {
+      final response = await _dio.post(
+        "/analysis/analyze/background",
+        data: {
+          if (repoPath != null) "repo_path": repoPath,
+          if (repoUrl != null) "repo_url": repoUrl,
+          "export_format": "json",
+        },
+        options: await _authOptions(),
+      );
+
+      final data = Map<String, dynamic>.from(response.data as Map);
+      if (data['status']?.toString() == 'accepted' &&
+          data['task_id'] != null) {
+        return data['task_id'].toString();
+      }
+
+      throw AnalysisApiException(
+        errorType: data['error_type']?.toString() ?? 'unknown_error',
+        message:
+            data['message']?.toString() ?? 'Failed to start background analysis.',
+      );
+    } on DioException catch (e) {
+      throw _mapDioException(e);
+    }
+  }
+
+  Future<AnalysisProgress> getAnalysisProgress(String taskId) async {
+    try {
+      final response = await _dio.get(
+        "/analysis/progress/$taskId",
+        options: await _authOptions(),
+      );
+      return AnalysisProgress.fromJson(
+        Map<String, dynamic>.from(response.data as Map),
+      );
+    } on DioException catch (e) {
+      throw _mapDioException(e);
+    }
+  }
+
+  Future<AnalysisResultPayload> getAnalysisResult(String taskId) async {
+    try {
+      final response = await _dio.get(
+        "/analysis/analysis/result/$taskId",
+        options: await _authOptions(),
+      );
+      return AnalysisResultPayload.fromJson(
+        Map<String, dynamic>.from(response.data as Map),
+      );
+    } on DioException catch (e) {
+      throw _mapDioException(e);
+    }
+  }
+
   Future<AnalysisReport> _analyze(Map<String, dynamic> payload) async {
     try {
       final response = await _dio.post(
@@ -79,35 +138,7 @@ class ApiService {
         message: data['message']?.toString() ?? 'Analysis failed.',
       );
     } on DioException catch (e) {
-      final responseData = e.response?.data;
-      if (responseData is Map) {
-        final data = Map<String, dynamic>.from(responseData);
-        throw AnalysisApiException(
-          errorType: data['error_type']?.toString() ?? 'unknown_error',
-          message: data['message']?.toString() ?? 'Analysis failed.',
-        );
-      }
-
-      if (e.type == DioExceptionType.connectionTimeout ||
-          e.type == DioExceptionType.receiveTimeout ||
-          e.type == DioExceptionType.sendTimeout) {
-        throw AnalysisApiException(
-          errorType: 'timeout',
-          message: 'Analysis timed out.',
-        );
-      }
-
-      if (e.type == DioExceptionType.connectionError ||
-          e.type == DioExceptionType.unknown) {
-        throw AnalysisApiException(
-          errorType: 'network_error',
-          message: 'Network error while contacting analysis service.',
-        );
-      }
-      throw AnalysisApiException(
-        errorType: 'unknown_error',
-        message: 'Analysis request failed.',
-      );
+      throw _mapDioException(e);
     } catch (e) {
       if (e is AnalysisApiException) {
         rethrow;
@@ -117,5 +148,40 @@ class ApiService {
         message: 'Analysis failed.',
       );
     }
+  }
+
+  AnalysisApiException _mapDioException(DioException e) {
+    final responseData = e.response?.data;
+    if (responseData is Map) {
+      final data = Map<String, dynamic>.from(responseData);
+      return AnalysisApiException(
+        errorType: data['error_type']?.toString() ??
+            data['status']?.toString() ??
+            'unknown_error',
+        message: data['message']?.toString() ?? 'Analysis failed.',
+      );
+    }
+
+    if (e.type == DioExceptionType.connectionTimeout ||
+        e.type == DioExceptionType.receiveTimeout ||
+        e.type == DioExceptionType.sendTimeout) {
+      return AnalysisApiException(
+        errorType: 'timeout',
+        message: 'Analysis timed out.',
+      );
+    }
+
+    if (e.type == DioExceptionType.connectionError ||
+        e.type == DioExceptionType.unknown) {
+      return AnalysisApiException(
+        errorType: 'network_error',
+        message: 'Network error while contacting analysis service.',
+      );
+    }
+
+    return AnalysisApiException(
+      errorType: 'unknown_error',
+      message: 'Analysis request failed.',
+    );
   }
 }

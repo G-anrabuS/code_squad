@@ -1,7 +1,7 @@
 import asyncio
 import logging
 from datetime import datetime
-from typing import Any, Dict, List
+from typing import Any, Callable, Dict, List, Optional
 
 from app.schemas.agent_output_schema import (
     AgentFailure,
@@ -33,20 +33,36 @@ logger = logging.getLogger(__name__)
 class CodebaseAnalysisPipeline:
     """Pipeline orchestrating repository analysis using Qdrant and Gemini."""
 
-    async def analyze_repository(self, repo_path: str) -> FinalAnalysisReport:
-        repo_context = build_repo_context(repo_path)
+    async def analyze_repository(
+        self,
+        repo_path: str,
+        progress_callback: Optional[Callable[[str, str, Optional[str]], None]] = None,
+    ) -> FinalAnalysisReport:
+        if progress_callback:
+            progress_callback("scan", "running", None)
 
         try:
+            repo_context = build_repo_context(repo_path)
             ingestion_summary = ingest_repository_to_qdrant(repo_path)
         except Exception:
+            if progress_callback:
+                progress_callback(
+                    "scan",
+                    "failed",
+                    "Failed to prepare repository context for analysis.",
+                )
             raise AnalysisError(
                 error_type="unknown_error",
                 message="Failed to prepare repository context for analysis.",
                 http_status=500,
             ) from None
+        if progress_callback:
+            progress_callback("scan", "completed", None)
 
         analysis_tasks = [
-            asyncio.create_task(self._run_agent(agent_name, repo_context))
+            asyncio.create_task(
+                self._run_agent(agent_name, repo_context, progress_callback)
+            )
             for agent_name in AGENT_NAMES
         ]
         results = await asyncio.gather(*analysis_tasks, return_exceptions=False)
@@ -70,10 +86,15 @@ class CodebaseAnalysisPipeline:
         return self._build_final_report(repo_context, agent_outputs, ingestion_summary)
 
     async def _run_agent(
-        self, agent_name: str, repo_context: Dict[str, Any]
+        self,
+        agent_name: str,
+        repo_context: Dict[str, Any],
+        progress_callback: Optional[Callable[[str, str, Optional[str]], None]] = None,
     ) -> Dict[str, Any]:
         label = agent_name.upper()
         logger.info("[%s] started", label)
+        if progress_callback:
+            progress_callback(agent_name, "running", None)
 
         try:
             chunks = retrieve_agent_chunks(agent_name, repo_context, top_k=6)
@@ -84,9 +105,13 @@ class CodebaseAnalysisPipeline:
                 model=AGENT_MODEL_MAP.get(agent_name),
             )
             logger.info("[%s] success", label)
+            if progress_callback:
+                progress_callback(agent_name, "completed", None)
             return {"agent_name": agent_name, "status": "success", "result": result}
         except AnalysisError as exc:
             logger.warning("[%s] failed: %s", label, exc.message)
+            if progress_callback:
+                progress_callback(agent_name, "failed", exc.message)
             return {
                 "agent_name": agent_name,
                 "status": "error",
@@ -99,6 +124,12 @@ class CodebaseAnalysisPipeline:
             }
         except Exception:
             logger.exception("[%s] failed: unknown error", label)
+            if progress_callback:
+                progress_callback(
+                    agent_name,
+                    "failed",
+                    f"Gemini analysis failed for {agent_name}.",
+                )
             return {
                 "agent_name": agent_name,
                 "status": "error",
@@ -198,13 +229,33 @@ class CodebaseAnalysisPipeline:
                 final_recommendations.extend(review.recommendations[:2])
         final_recommendations = [rec for rec in final_recommendations if rec]
 
-        overall_score = 0.0
-        if isinstance(judge_review, AgentOutput) and isinstance(
-            judge_review.findings.get("code_quality_score"), (int, float)
-        ):
-            overall_score = float(judge_review.findings.get("code_quality_score"))
-        if overall_score <= 0:
-            overall_score = 70.0
+        severity_scores = {
+            "low": 90,
+            "medium": 70,
+            "high": 45,
+            "critical": 20,
+        }
+
+        scores = []
+
+        for review in [
+            summary_review,
+            judge_review,
+            architect_review,
+            performance_review,
+            security_review,
+        ]:
+            if isinstance(review, AgentOutput):
+                score = review.findings.get("code_quality_score")
+
+                if isinstance(score, (int, float)):
+                    scores.append(float(score))
+                else:
+                    severity = str(review.severity).lower()
+                    if severity in severity_scores:
+                        scores.append(severity_scores[severity])
+
+        overall_score = sum(scores) / len(scores) if scores else 70.0
 
         return FinalAnalysisReport(
             repo_id=repo_context.get("repo_id", ""),
@@ -226,8 +277,10 @@ class CodebaseAnalysisPipeline:
             performance_review=performance_review,
             security_review=security_review,
             priority_fixes=priority_fixes,
-            improved_architecture=architect_review.findings.get(
-                "improved_architecture", {}
-            ) if isinstance(architect_review, AgentOutput) else {},
+            improved_architecture=(
+                architect_review.findings.get("improved_architecture", {})
+                if isinstance(architect_review, AgentOutput)
+                else {}
+            ),
             final_recommendations=final_recommendations,
         )

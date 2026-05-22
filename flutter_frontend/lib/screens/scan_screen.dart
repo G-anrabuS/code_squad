@@ -30,13 +30,16 @@ class _ScanScreenState extends State<ScanScreen> {
         widget.repoName,
         widget.branchName,
       );
+      final taskId = await _apiService.startBackgroundAnalysis(
+        repoPath: repoPath,
+      );
 
       if (!mounted) return;
 
       Navigator.push(
         context,
         MaterialPageRoute(
-          builder: (_) => AnalysisLoadingScreen(repoPath: repoPath),
+          builder: (_) => AnalysisLoadingScreen(taskId: taskId),
         ),
       );
     } catch (e) {
