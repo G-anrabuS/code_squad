@@ -42,12 +42,13 @@ def create_collection_if_not_exists(
     distance: str = "Cosine",
 ) -> None:
     """
-    Create collection only if it doesn't exist.
+    Create collection only if it doesn't exist, and establish necessary payload indexes.
     """
     try:
         client.get_collection(collection_name=collection_name)
 
     except Exception:
+        # 1. Create the brand new collection
         client.create_collection(
             collection_name=collection_name,
             vectors_config=rest_models.VectorParams(
@@ -55,6 +56,18 @@ def create_collection_if_not_exists(
                 distance=rest_models.Distance[distance.upper()],
             ),
         )
+
+        # 2. Automatically apply a Keyword Index to "repo_id" payload property
+        # This prevents Qdrant from throwing a 400 Bad Request during filtered semantic search!
+        try:
+            client.create_payload_index(
+                collection_name=collection_name,
+                field_name="repo_id",
+                field_schema=rest_models.PayloadSchemaType.KEYWORD,
+            )
+        except Exception:
+            # Fallback block to prevent deployment startup failures if something minor warns
+            pass
 
 
 def upsert_points(
