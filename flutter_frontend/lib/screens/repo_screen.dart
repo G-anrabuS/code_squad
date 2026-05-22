@@ -40,8 +40,9 @@ class _RepoScreenState extends State<RepoScreen> {
       repos = await _apiService.getRepos();
     } catch (e) {
       if (!mounted) return;
-      ScaffoldMessenger.of(context)
-          .showSnackBar(SnackBar(content: Text("Failed to load repos: $e")));
+      ScaffoldMessenger.of(
+        context,
+      ).showSnackBar(SnackBar(content: Text("Failed to load repos: $e")));
     } finally {
       if (mounted) {
         setState(() => loading = false);
@@ -76,15 +77,14 @@ class _RepoScreenState extends State<RepoScreen> {
       if (!mounted) return;
       Navigator.push(
         context,
-        MaterialPageRoute(
-          builder: (_) => AnalysisReportScreen(report: report),
-        ),
+        MaterialPageRoute(builder: (_) => AnalysisReportScreen(report: report)),
       );
     } catch (e) {
       debugPrint('Analyze URL failed: $e');
       if (!mounted) return;
-      ScaffoldMessenger.of(context)
-          .showSnackBar(SnackBar(content: Text('URL analysis failed: $e')));
+      ScaffoldMessenger.of(
+        context,
+      ).showSnackBar(SnackBar(content: Text('URL analysis failed: $e')));
     } finally {
       if (mounted) {
         setState(() => analyzingUrl = false);
@@ -109,7 +109,9 @@ class _RepoScreenState extends State<RepoScreen> {
           padding: const EdgeInsets.all(16),
           children: [
             Card(
-              shape: RoundedRectangleBorder(borderRadius: BorderRadius.circular(16)),
+              shape: RoundedRectangleBorder(
+                borderRadius: BorderRadius.circular(16),
+              ),
               child: Padding(
                 padding: const EdgeInsets.all(20),
                 child: Column(
@@ -117,7 +119,10 @@ class _RepoScreenState extends State<RepoScreen> {
                   children: [
                     const Text(
                       'AI Dashboard',
-                      style: TextStyle(fontSize: 24, fontWeight: FontWeight.bold),
+                      style: TextStyle(
+                        fontSize: 24,
+                        fontWeight: FontWeight.bold,
+                      ),
                     ),
                     const SizedBox(height: 8),
                     const Text(
@@ -177,30 +182,28 @@ class _RepoScreenState extends State<RepoScreen> {
             loading
                 ? const Center(child: CircularProgressIndicator())
                 : repos.isEmpty
-                    ? const Center(child: Text('No repositories found.'))
-                    : Column(
-                        children: repos.map((repo) {
-                          return Card(
-                            margin: const EdgeInsets.symmetric(vertical: 8),
-                            child: ListTile(
-                              title: Text(repo.name),
-                              subtitle:
-                                  Text(repo.isPrivate ? 'Private' : 'Public'),
-                              trailing: const Icon(Icons.arrow_forward_ios),
-                              onTap: () {
-                                Navigator.push(
-                                  context,
-                                  MaterialPageRoute(
-                                    builder: (_) => BranchScreen(
-                                      repoName: repo.fullName,
-                                    ),
-                                  ),
-                                );
-                              },
-                            ),
-                          );
-                        }).toList(),
-                      ),
+                ? const Center(child: Text('No repositories found.'))
+                : Column(
+                    children: repos.map((repo) {
+                      return Card(
+                        margin: const EdgeInsets.symmetric(vertical: 8),
+                        child: ListTile(
+                          title: Text(repo.name),
+                          subtitle: Text(repo.isPrivate ? 'Private' : 'Public'),
+                          trailing: const Icon(Icons.arrow_forward_ios),
+                          onTap: () {
+                            Navigator.push(
+                              context,
+                              MaterialPageRoute(
+                                builder: (_) =>
+                                    BranchScreen(repoName: repo.fullName),
+                              ),
+                            );
+                          },
+                        ),
+                      );
+                    }).toList(),
+                  ),
             const SizedBox(height: 40),
             const Text(
               'Quick actions',
@@ -211,7 +214,9 @@ class _RepoScreenState extends State<RepoScreen> {
               child: ListTile(
                 leading: const Icon(Icons.info_outline),
                 title: const Text('Analyze a public GitHub repository by URL'),
-                subtitle: const Text('Paste any public repo link and press Analyze.'),
+                subtitle: const Text(
+                  'Paste any public repo link and press Analyze.',
+                ),
               ),
             ),
             const SizedBox(height: 12),
@@ -225,7 +230,9 @@ class _RepoScreenState extends State<RepoScreen> {
                         child: CircularProgressIndicator(strokeWidth: 2),
                       )
                     : const Icon(Icons.flash_on),
-                label: Text(analyzingUrl ? 'Analyzing...' : 'Analyze Repository'),
+                label: Text(
+                  analyzingUrl ? 'Analyzing...' : 'Analyze Repository',
+                ),
                 onPressed: analyzingUrl ? null : _analyzeRepoUrl,
               ),
             ),
@@ -257,7 +264,7 @@ class _RepoScreenState extends State<RepoScreen> {
               Row(
                 children: [
                   CircleAvatar(
-                    backgroundColor: color.withOpacity(0.16),
+                    backgroundColor: color.withValues(alpha: 0.16),
                     child: Icon(icon, color: color),
                   ),
                   const SizedBox(width: 12),
@@ -274,10 +281,7 @@ class _RepoScreenState extends State<RepoScreen> {
               ),
               const SizedBox(height: 8),
               Text(subtitle),
-              if (child != null) ...[
-                const SizedBox(height: 14),
-                child,
-              ],
+              if (child != null) ...[const SizedBox(height: 14), child],
               const SizedBox(height: 16),
               SizedBox(
                 width: double.infinity,

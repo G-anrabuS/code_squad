@@ -1,3 +1,5 @@
+from os import path
+
 import openai
 from typing import Any, Dict, List, Optional
 
@@ -7,19 +9,28 @@ from app.services.embedding_service import semantic_search
 
 def _configure_openai() -> None:
     if not OPENAI_API_KEY:
-        raise ValueError("OPENAI_API_KEY is not set. Please add OPENAI_API_KEY to .env.")
+        raise ValueError(
+            "OPENAI_API_KEY is not set. Please add OPENAI_API_KEY to .env."
+        )
     openai.api_key = OPENAI_API_KEY
 
 
-def _build_chat_prompt(query: str, repo_context: Dict[str, Any], chunks: List[Dict[str, Any]]) -> str:
+def _build_chat_prompt(
+    query: str, repo_context: Dict[str, Any], chunks: List[Dict[str, Any]]
+) -> str:
     chunk_text_items = []
     for idx, hit in enumerate(chunks, start=1):
-        payload = hit.get('payload', {})
-        snippet = payload.get('content', '')
-        path = payload.get('path', '<unknown>')
-        chunk_text_items.append(f"{idx}. Path: {path}\nSnippet: {snippet[:400].replace('\n', ' ')}")
+        payload = hit.get("payload", {})
+        snippet = payload.get("content", "")
+        path = payload.get("path", "<unknown>")
+        clean_snippet = snippet[:400].replace("\n", " ")
+        chunk_text_items.append(f"{idx}. Path: {path}\nSnippet: {clean_snippet}")
 
-    chunk_text = '\n\n'.join(chunk_text_items) if chunk_text_items else 'No relevant chunks were retrieved.'
+    chunk_text = (
+        "\n\n".join(chunk_text_items)
+        if chunk_text_items
+        else "No relevant chunks were retrieved."
+    )
 
     return (
         f"You are a codebase-aware assistant. Use only the retrieved repository chunks to answer the user query. "
@@ -63,13 +74,13 @@ async def rag_chat(
     )
 
     return {
-        'query': query,
-        'answer': response.choices[0].message.content.strip(),
-        'retrieved_chunks': [
+        "query": query,
+        "answer": response.choices[0].message.content.strip(),
+        "retrieved_chunks": [
             {
-                'path': hit.get('payload', {}).get('path'),
-                'score': hit.get('score'),
-                'snippet': hit.get('payload', {}).get('content', '')[:400],
+                "path": hit.get("payload", {}).get("path"),
+                "score": hit.get("score"),
+                "snippet": hit.get("payload", {}).get("content", "")[:400],
             }
             for hit in chunks
         ],

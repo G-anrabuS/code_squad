@@ -40,9 +40,9 @@ def create_collection_if_not_exists(
     except Exception:
         client.recreate_collection(
             collection_name=collection_name,
-            vectors=rest_models.VectorParams(
+            vectors_config=rest_models.VectorParams(
                 size=vector_size,
-                distance=rest_models.Distance(distance.upper()),
+                distance=rest_models.Distance[distance.upper()],
             ),
         )
 

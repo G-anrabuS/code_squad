@@ -37,8 +37,9 @@ class _AnalysisLoadingScreenState extends State<AnalysisLoadingScreen> {
       debugPrint('Analysis request failed: $e');
       if (!mounted) return;
 
-      ScaffoldMessenger.of(context)
-          .showSnackBar(SnackBar(content: Text("Analysis failed: $e")));
+      ScaffoldMessenger.of(
+        context,
+      ).showSnackBar(SnackBar(content: Text("Analysis failed: $e")));
 
       Navigator.pop(context);
     }
@@ -80,7 +81,7 @@ class _AnalysisLoadingScreenState extends State<AnalysisLoadingScreen> {
               Expanded(
                 child: ListView.separated(
                   itemCount: steps.length,
-                  separatorBuilder: (_, __) => const Divider(height: 24),
+                  separatorBuilder: (_, _) => const Divider(height: 24),
                   itemBuilder: (context, index) {
                     final stage = steps[index];
                     final active = index <= 1;
@@ -88,7 +89,9 @@ class _AnalysisLoadingScreenState extends State<AnalysisLoadingScreen> {
                       leading: CircleAvatar(
                         backgroundColor: active
                             ? Theme.of(context).colorScheme.primary
-                            : Theme.of(context).colorScheme.surfaceVariant,
+                            : Theme.of(
+                                context,
+                              ).colorScheme.surfaceContainerHighest,
                         child: Icon(
                           active ? Icons.check : Icons.timelapse,
                           color: active ? Colors.white : null,

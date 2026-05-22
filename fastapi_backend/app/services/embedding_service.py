@@ -1,23 +1,43 @@
 import os
+import uuid
 from typing import Any, Dict, List, Optional
 
-import openai
+from sentence_transformers import SentenceTransformer
+from qdrant_client.http import models as rest_models
 
 from app.core.config import (
-    OPENAI_API_KEY,
-    OPENAI_EMBEDDING_MODEL,
     QDRANT_API_KEY,
     QDRANT_COLLECTION,
     QDRANT_URL,
     QDRANT_DISTANCE,
 )
-from app.db.qdrant import create_collection_if_not_exists, get_qdrant_client, upsert_points
+from app.db.qdrant import (
+    create_collection_if_not_exists,
+    get_qdrant_client,
+    upsert_points,
+)
 from app.services.chunk_service import chunk_repository
 
+# Define the new local model
+LOCAL_MODEL_NAME = "all-MiniLM-L6-v2"
 MODEL_DIMENSIONS = {
-    "text-embedding-3-small": 1536,
-    "text-embedding-3-large": 3072,
+    LOCAL_MODEL_NAME: 384,  # Updated to MiniLM's dimension size
 }
+
+BATCH_SIZE = 32
+
+# Load the model once in memory (it will download automatically the first time)
+_embedding_model = None
+
+
+def _get_model() -> SentenceTransformer:
+    global _embedding_model
+    if _embedding_model is None:
+        print(
+            "Loading local embedding model (this may take a moment the first time)..."
+        )
+        _embedding_model = SentenceTransformer(LOCAL_MODEL_NAME)
+    return _embedding_model
 
 
 def semantic_search(
@@ -29,11 +49,12 @@ def semantic_search(
 ) -> List[Dict[str, Any]]:
     """Perform semantic search against Qdrant for the given query."""
     collection_name = collection_name or QDRANT_COLLECTION
-    model = model or OPENAI_EMBEDDING_MODEL
+    model = model or LOCAL_MODEL_NAME
 
-    _configure_openai()
-    response = openai.Embedding.create(model=model, input=[query])
-    query_vector = response["data"][0]["embedding"]
+    transformer = _get_model()
+
+    # encode returns a numpy array, .tolist() converts it to standard Python floats
+    query_vector = transformer.encode(query).tolist()
 
     qdrant_client = get_qdrant_client(QDRANT_URL, QDRANT_API_KEY)
 
@@ -69,25 +90,11 @@ def semantic_search(
 
     return results
 
-BATCH_SIZE = 32
-
-
-def _configure_openai() -> None:
-    if not OPENAI_API_KEY:
-        raise ValueError("OPENAI_API_KEY is not set. Please add OPENAI_API_KEY to .env.")
-
-    openai.api_key = OPENAI_API_KEY
-
 
 def embed_texts(texts: List[str], model: str) -> List[List[float]]:
-    _configure_openai()
-
-    embeddings: List[List[float]] = []
-    for i in range(0, len(texts), 100):
-        batch = texts[i : i + 100]
-        response = openai.Embedding.create(model=model, input=batch)
-        embeddings.extend([item["embedding"] for item in response["data"]])
-
+    transformer = _get_model()
+    # SentenceTransformers handles batching natively and efficiently
+    embeddings = transformer.encode(texts, batch_size=BATCH_SIZE).tolist()
     return embeddings
 
 
@@ -97,18 +104,18 @@ def ingest_repository_to_qdrant(
     model: Optional[str] = None,
 ) -> Dict[str, object]:
     collection_name = collection_name or QDRANT_COLLECTION
-    model = model or OPENAI_EMBEDDING_MODEL
+    model = model or LOCAL_MODEL_NAME
 
     chunks = chunk_repository(repo_path)
     if not chunks:
         raise ValueError(f"No eligible code files found under {repo_path}.")
 
     if model not in MODEL_DIMENSIONS:
-        raise ValueError(
-            "Unsupported embedding model. Use text-embedding-3-small or text-embedding-3-large."
-        )
+        raise ValueError(f"Unsupported embedding model. Use {LOCAL_MODEL_NAME}.")
 
     qdrant_client = get_qdrant_client(QDRANT_URL, QDRANT_API_KEY)
+
+    # This will create a new collection requiring 384 dimensions
     create_collection_if_not_exists(
         qdrant_client,
         collection_name=collection_name,
@@ -124,9 +131,13 @@ def ingest_repository_to_qdrant(
 
         points = []
         for chunk, vector in zip(batch, vectors):
+
+            # Generate a valid UUID from your string ID using uuid5
+            valid_uuid = str(uuid.uuid5(uuid.NAMESPACE_DNS, chunk["id"]))
+
             points.append(
                 {
-                    "id": chunk["id"],
+                    "id": valid_uuid,  # <--- Use the newly generated UUID here
                     "vector": vector,
                     "payload": {
                         "chunk_id": chunk["chunk_id"],
@@ -140,8 +151,7 @@ def ingest_repository_to_qdrant(
                 }
             )
 
-        upsert_points(qdrant_client, collection_name=collection_name, points=points)
-        total_points += len(points)
+            upsert_points(qdrant_client, collection_name=collection_name, points=points)
 
     return {
         "status": "success",
