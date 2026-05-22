@@ -238,7 +238,7 @@ async def get_analysis_result(task_id: str) -> Dict[str, Any]:
 
 @router.get("/progress/{task_id}", response_model=ProgressResponse)
 async def get_analysis_progress(task_id: str) -> Dict[str, Any]:
-    task = get_task(task)
+    task = get_task(task_id)
 
     if not task:
         return {
