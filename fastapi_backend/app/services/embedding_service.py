@@ -1,4 +1,6 @@
 import uuid
+import time
+import logging
 from typing import Any, Dict, List, Optional
 
 from google import genai
@@ -17,10 +19,13 @@ from app.db.qdrant import (
 )
 from app.services.chunk_service import chunk_repository
 
+logger = logging.getLogger(__name__)
+
 client = genai.Client(api_key=GEMINI_API_KEY)
 
 EMBEDDING_MODEL = "gemini-embedding-2"
 
+# Updated to 3072 to match Gemini's native output dimension
 MODEL_DIMENSIONS = {
     EMBEDDING_MODEL: 3072,
 }
@@ -51,18 +56,37 @@ def embed_texts(
     model: str = EMBEDDING_MODEL,
 ) -> List[List[float]]:
     """
-    Generate embeddings for text chunks using Gemini.
+    Generate embeddings for a list of text chunks using Gemini's native batching
+    and exponential backoff retry for rate limits.
     """
-    embeddings = []
+    if not texts:
+        return []
 
-    for text in texts:
-        response = client.models.embed_content(
-            model=model,
-            contents=text,
-        )
-        embeddings.append(response.embeddings[0].values)
+    max_retries = 6
+    base_delay = 4.0  # Seconds to wait initially on rate limit hits
 
-    return embeddings
+    for attempt in range(max_retries):
+        try:
+            # Pass the entire list at once to utilize batching (1 request instead of 32)
+            response = client.models.embed_content(
+                model=model,
+                contents=texts,
+            )
+            return [emb.values for emb in response.embeddings]
+
+        except Exception as e:
+            err_str = str(e).lower()
+            # Catch 429, Resource Exhausted, or Rate Limit errors
+            if "429" in err_str or "exhausted" in err_str or "rate limit" in err_str:
+                delay = base_delay * (2**attempt)
+                logger.warning(
+                    f"Gemini Rate Limit Hit (TPM/RPM). Retrying attempt {attempt + 1}/{max_retries} after sleeping {delay}s..."
+                )
+                time.sleep(delay)
+            else:
+                raise e
+
+    raise RuntimeError("Max retries exceeded for Gemini embedding due to rate limits.")
 
 
 def semantic_search(
@@ -192,6 +216,9 @@ def ingest_repository_to_qdrant(
         )
 
         total_points += len(points)
+
+        # Add a minor delay between batch requests to safely respect the TPM quota
+        time.sleep(1.5)
 
     return {
         "status": "success",
