@@ -94,8 +94,6 @@ class _RepoScreenState extends State<RepoScreen> {
 
   @override
   Widget build(BuildContext context) {
-    final theme = Theme.of(context);
-
     return Scaffold(
       appBar: AppBar(
         title: const Text('Code Squad'),
@@ -108,72 +106,55 @@ class _RepoScreenState extends State<RepoScreen> {
         child: ListView(
           padding: const EdgeInsets.all(16),
           children: [
+            // 1. QUICK ACTIONS SECTION (MOVED TO TOP)
+            const Text(
+              'Quick actions',
+              style: TextStyle(fontSize: 20, fontWeight: FontWeight.bold),
+            ),
+            const SizedBox(height: 8),
             Card(
-              shape: RoundedRectangleBorder(
-                borderRadius: BorderRadius.circular(16),
-              ),
               child: Padding(
-                padding: const EdgeInsets.all(20),
-                child: Column(
-                  crossAxisAlignment: CrossAxisAlignment.start,
-                  children: [
-                    const Text(
-                      'AI Dashboard',
-                      style: TextStyle(
-                        fontSize: 24,
-                        fontWeight: FontWeight.bold,
-                      ),
-                    ),
-                    const SizedBox(height: 8),
-                    const Text(
-                      'Analyze GitHub repositories by selected repo or public URL. Upload ZIP support coming soon.',
-                    ),
-                    const SizedBox(height: 20),
-                    Wrap(
-                      spacing: 12,
-                      runSpacing: 12,
-                      children: [
-                        _actionCard(
-                          title: 'Upload ZIP',
-                          subtitle: 'Drag & drop or browse repo archive',
-                          icon: Icons.upload_file,
-                          color: theme.colorScheme.primary,
-                          buttonLabel: 'Coming soon',
-                          enabled: false,
-                          onTap: () {},
-                        ),
-                        _actionCard(
-                          title: 'Connect GitHub',
-                          subtitle: 'Choose a repository from your account',
-                          icon: Icons.link,
-                          color: theme.colorScheme.secondary,
-                          buttonLabel: 'Refresh',
-                          enabled: true,
-                          onTap: _loadRepos,
-                        ),
-                        _actionCard(
-                          title: 'Paste Repo URL',
-                          subtitle: 'Analyze any public GitHub repo',
-                          icon: Icons.code,
-                          color: theme.colorScheme.tertiary,
-                          buttonLabel: 'Analyze',
-                          enabled: true,
-                          onTap: _analyzeRepoUrl,
-                          child: TextField(
-                            controller: _urlController,
-                            decoration: const InputDecoration(
-                              hintText: 'https://github.com/owner/repo',
-                              border: OutlineInputBorder(),
-                            ),
-                          ),
-                        ),
-                      ],
-                    ),
-                  ],
+                padding: const EdgeInsets.symmetric(vertical: 8.0),
+                child: ListTile(
+                  leading: const Icon(Icons.info_outline),
+                  title: const Text(
+                    'Analyze a public GitHub repository by URL',
+                  ),
+                  subtitle: const Text(
+                    'Paste any public repo link and press Analyze.',
+                  ),
                 ),
               ),
             ),
-            const SizedBox(height: 20),
+            const SizedBox(height: 12),
+            TextField(
+              controller: _urlController,
+              decoration: const InputDecoration(
+                hintText: 'https://github.com/owner/repo',
+                border: OutlineInputBorder(),
+              ),
+            ),
+            const SizedBox(height: 12),
+            SizedBox(
+              width: double.infinity,
+              child: ElevatedButton.icon(
+                icon: analyzingUrl
+                    ? const SizedBox(
+                        width: 18,
+                        height: 18,
+                        child: CircularProgressIndicator(strokeWidth: 2),
+                      )
+                    : const Icon(Icons.flash_on),
+                label: Text(
+                  analyzingUrl ? 'Analyzing...' : 'Analyze Repository',
+                ),
+                onPressed: analyzingUrl ? null : _analyzeRepoUrl,
+              ),
+            ),
+
+            const SizedBox(height: 32),
+
+            // 2. GITHUB REPOSITORY LIST SECTION
             const Text(
               'GitHub Repository List',
               style: TextStyle(fontSize: 20, fontWeight: FontWeight.bold),
@@ -204,94 +185,7 @@ class _RepoScreenState extends State<RepoScreen> {
                       );
                     }).toList(),
                   ),
-            const SizedBox(height: 40),
-            const Text(
-              'Quick actions',
-              style: TextStyle(fontSize: 20, fontWeight: FontWeight.bold),
-            ),
-            const SizedBox(height: 8),
-            Card(
-              child: ListTile(
-                leading: const Icon(Icons.info_outline),
-                title: const Text('Analyze a public GitHub repository by URL'),
-                subtitle: const Text(
-                  'Paste any public repo link and press Analyze.',
-                ),
-              ),
-            ),
-            const SizedBox(height: 12),
-            SizedBox(
-              width: double.infinity,
-              child: ElevatedButton.icon(
-                icon: analyzingUrl
-                    ? const SizedBox(
-                        width: 18,
-                        height: 18,
-                        child: CircularProgressIndicator(strokeWidth: 2),
-                      )
-                    : const Icon(Icons.flash_on),
-                label: Text(
-                  analyzingUrl ? 'Analyzing...' : 'Analyze Repository',
-                ),
-                onPressed: analyzingUrl ? null : _analyzeRepoUrl,
-              ),
-            ),
           ],
-        ),
-      ),
-    );
-  }
-
-  Widget _actionCard({
-    required String title,
-    required String subtitle,
-    required IconData icon,
-    required Color color,
-    required String buttonLabel,
-    required bool enabled,
-    required VoidCallback onTap,
-    Widget? child,
-  }) {
-    return SizedBox(
-      width: 320,
-      child: Card(
-        shape: RoundedRectangleBorder(borderRadius: BorderRadius.circular(16)),
-        child: Padding(
-          padding: const EdgeInsets.all(16),
-          child: Column(
-            crossAxisAlignment: CrossAxisAlignment.start,
-            children: [
-              Row(
-                children: [
-                  CircleAvatar(
-                    backgroundColor: color.withValues(alpha: 0.16),
-                    child: Icon(icon, color: color),
-                  ),
-                  const SizedBox(width: 12),
-                  Expanded(
-                    child: Text(
-                      title,
-                      style: const TextStyle(
-                        fontSize: 18,
-                        fontWeight: FontWeight.bold,
-                      ),
-                    ),
-                  ),
-                ],
-              ),
-              const SizedBox(height: 8),
-              Text(subtitle),
-              if (child != null) ...[const SizedBox(height: 14), child],
-              const SizedBox(height: 16),
-              SizedBox(
-                width: double.infinity,
-                child: OutlinedButton(
-                  onPressed: enabled ? onTap : null,
-                  child: Text(buttonLabel),
-                ),
-              ),
-            ],
-          ),
         ),
       ),
     );
