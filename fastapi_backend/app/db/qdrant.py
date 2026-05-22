@@ -13,7 +13,11 @@ def get_qdrant_client(
     prefer_grpc: bool = False,
     check_compatibility: bool = False,
 ) -> QdrantClient:
+    """
+    Create Qdrant client for local or cloud use.
+    """
     url = url or QDRANT_URL
+
     client_args = {
         "url": url,
         "prefer_grpc": prefer_grpc,
@@ -37,10 +41,14 @@ def create_collection_if_not_exists(
     vector_size: int,
     distance: str = "Cosine",
 ) -> None:
+    """
+    Create collection only if it doesn't exist.
+    """
     try:
         client.get_collection(collection_name=collection_name)
+
     except Exception:
-        client.recreate_collection(
+        client.create_collection(
             collection_name=collection_name,
             vectors_config=rest_models.VectorParams(
                 size=vector_size,
@@ -54,4 +62,10 @@ def upsert_points(
     collection_name: str,
     points: List[Dict[str, Any]],
 ) -> None:
-    client.upsert(collection_name=collection_name, points=points)
+    """
+    Insert/update vectors into Qdrant.
+    """
+    client.upsert(
+        collection_name=collection_name,
+        points=points,
+    )

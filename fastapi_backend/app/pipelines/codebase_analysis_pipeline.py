@@ -1,7 +1,7 @@
 import asyncio
 import logging
 from datetime import datetime
-from typing import Any, Callable, Dict, List, Optional
+from typing import Any, Callable, Dict, Optional
 
 from app.schemas.agent_output_schema import (
     AgentFailure,
@@ -14,8 +14,12 @@ from app.schemas.agent_output_schema import (
 )
 from app.schemas.report_schema import FinalAnalysisReport
 from app.services.analysis_errors import AnalysisError
+from app.services.embedding_service import (
+    cleanup_qdrant_collection,
+    ingest_repository_to_qdrant,
+)
 from app.services.llm_service import analyze_agent
-from app.services.qdrant_service import build_repo_context, ingest_repository_to_qdrant
+from app.services.qdrant_service import build_repo_context
 from app.services.retriever_service import retrieve_agent_chunks
 
 AGENT_MODEL_MAP = {
@@ -26,12 +30,19 @@ AGENT_MODEL_MAP = {
     "security": "gemini-3.1-flash-lite",
 }
 
-AGENT_NAMES = ["summary", "judge", "architect", "performance", "security"]
+AGENT_NAMES = [
+    "summary",
+    "judge",
+    "architect",
+    "performance",
+    "security",
+]
+
 logger = logging.getLogger(__name__)
 
 
 class CodebaseAnalysisPipeline:
-    """Pipeline orchestrating repository analysis using Qdrant and Gemini."""
+    """Pipeline orchestrating repository analysis."""
 
     async def analyze_repository(
         self,
@@ -41,9 +52,18 @@ class CodebaseAnalysisPipeline:
         if progress_callback:
             progress_callback("scan", "running", None)
 
+        collection_name = None
+
         try:
             repo_context = build_repo_context(repo_path)
-            ingestion_summary = ingest_repository_to_qdrant(repo_path)
+
+            ingestion_summary = ingest_repository_to_qdrant(
+                repo_path=repo_path,
+                repo_id=repo_context["repo_id"],
+            )
+
+            collection_name = ingestion_summary["collection_name"]
+
         except Exception:
             if progress_callback:
                 progress_callback(
@@ -51,67 +71,101 @@ class CodebaseAnalysisPipeline:
                     "failed",
                     "Failed to prepare repository context for analysis.",
                 )
+
             raise AnalysisError(
                 error_type="unknown_error",
                 message="Failed to prepare repository context for analysis.",
                 http_status=500,
             ) from None
+
         if progress_callback:
             progress_callback("scan", "completed", None)
 
-        analysis_tasks = [
-            asyncio.create_task(
-                self._run_agent(agent_name, repo_context, progress_callback)
-            )
-            for agent_name in AGENT_NAMES
-        ]
-        results = await asyncio.gather(*analysis_tasks, return_exceptions=False)
+        try:
+            analysis_tasks = [
+                asyncio.create_task(
+                    self._run_agent(
+                        agent_name=agent_name,
+                        repo_context=repo_context,
+                        collection_name=collection_name,
+                        progress_callback=progress_callback,
+                    )
+                )
+                for agent_name in AGENT_NAMES
+            ]
 
-        agent_outputs = {result["agent_name"]: result["result"] for result in results}
-        if all(result["status"] == "error" for result in results):
-            first_error = next(
-                (
-                    result["result"]
-                    for result in results
-                    if isinstance(result["result"], dict)
-                ),
-                {},
+            results = await asyncio.gather(
+                *analysis_tasks,
+                return_exceptions=False,
             )
-            raise AnalysisError(
-                error_type="analysis_failed",
-                message="All analysis agents failed.",
-                http_status=502,
-            ) from None
 
-        return self._build_final_report(repo_context, agent_outputs, ingestion_summary)
+            agent_outputs = {
+                result["agent_name"]: result["result"] for result in results
+            }
+
+            if all(result["status"] == "error" for result in results):
+                raise AnalysisError(
+                    error_type="analysis_failed",
+                    message="All analysis agents failed.",
+                    http_status=502,
+                )
+
+            return self._build_final_report(
+                repo_context,
+                agent_outputs,
+                ingestion_summary,
+            )
+
+        finally:
+            if collection_name:
+                cleanup_qdrant_collection(collection_name)
 
     async def _run_agent(
         self,
         agent_name: str,
         repo_context: Dict[str, Any],
+        collection_name: str,
         progress_callback: Optional[Callable[[str, str, Optional[str]], None]] = None,
     ) -> Dict[str, Any]:
         label = agent_name.upper()
+
         logger.info("[%s] started", label)
+
         if progress_callback:
             progress_callback(agent_name, "running", None)
 
         try:
-            chunks = retrieve_agent_chunks(agent_name, repo_context, top_k=6)
+            chunks = retrieve_agent_chunks(
+                agent_name=agent_name,
+                repo_context=repo_context,
+                collection_name=collection_name,
+                top_k=6,
+            )
+
             result = await analyze_agent(
                 agent_name=agent_name,
                 repo_context=repo_context,
                 chunks=chunks,
                 model=AGENT_MODEL_MAP.get(agent_name),
             )
+
             logger.info("[%s] success", label)
+
             if progress_callback:
                 progress_callback(agent_name, "completed", None)
-            return {"agent_name": agent_name, "status": "success", "result": result}
+
+            return {
+                "agent_name": agent_name,
+                "status": "success",
+                "result": result,
+            }
+
         except AnalysisError as exc:
             logger.warning("[%s] failed: %s", label, exc.message)
+
             if progress_callback:
                 progress_callback(agent_name, "failed", exc.message)
+
             return {
                 "agent_name": agent_name,
                 "status": "error",
@@ -122,14 +176,17 @@ class CodebaseAnalysisPipeline:
                     "agent_name": agent_name,
                 },
             }
+
         except Exception:
             logger.exception("[%s] failed: unknown error", label)
+
             if progress_callback:
                 progress_callback(
                     agent_name,
                     "failed",
                     f"Gemini analysis failed for {agent_name}.",
                 )
+
             return {
                 "agent_name": agent_name,
                 "status": "error",
@@ -209,15 +266,15 @@ class CodebaseAnalysisPipeline:
         )
 
         priority_fixes = []
-        if isinstance(judge_review, AgentOutput):
-            priority_fixes.extend(judge_review.recommendations[:3])
-        if isinstance(performance_review, AgentOutput):
-            priority_fixes.extend(performance_review.recommendations[:3])
-        if isinstance(security_review, AgentOutput):
-            priority_fixes.extend(security_review.recommendations[:3])
+
+        for review in [judge_review, performance_review, security_review]:
+            if isinstance(review, AgentOutput):
+                priority_fixes.extend(review.recommendations[:3])
+
         priority_fixes = [fix for fix in priority_fixes if fix]
 
         final_recommendations = []
+
         for review in [
             summary_review,
             architect_review,
@@ -227,6 +284,7 @@ class CodebaseAnalysisPipeline:
         ]:
             if isinstance(review, AgentOutput):
                 final_recommendations.extend(review.recommendations[:2])
+
         final_recommendations = [rec for rec in final_recommendations if rec]
 
         severity_scores = {

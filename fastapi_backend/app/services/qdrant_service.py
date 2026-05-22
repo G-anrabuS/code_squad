@@ -1,22 +1,8 @@
 import hashlib
 import os
-import uuid
 from typing import Any, Dict, List, Optional
 
-from app.core.config import (
-    QDRANT_API_KEY,
-    QDRANT_COLLECTION,
-    QDRANT_DISTANCE,
-    QDRANT_URL,
-)
-from app.db.qdrant import (
-    create_collection_if_not_exists,
-    get_qdrant_client,
-    upsert_points,
-)
-from app.services.chunk_service import chunk_repository
 from app.services.codebase_parser import CodebaseParser
-from app.services.embedding_service import embed_texts
 
 ENTRY_POINT_PATTERNS = [
     "main.py",
@@ -53,14 +39,19 @@ def _normalize_path(path: str) -> str:
     return path.replace("\\", "/").strip()
 
 
-def _summarize_folder_tree(tree: Dict[str, Any], max_children: int = 5) -> str:
+def _summarize_folder_tree(
+    tree: Dict[str, Any],
+    max_children: int = 5,
+) -> str:
     if not tree or "children" not in tree:
         return ""
 
     children = tree.get("children", [])
+
     top_dirs = [
         child.get("name") for child in children if child.get("type") == "directory"
     ][:max_children]
+
     top_files = [
         child.get("name") for child in children if child.get("type") == "file"
     ][:max_children]
@@ -70,15 +61,19 @@ def _summarize_folder_tree(tree: Dict[str, Any], max_children: int = 5) -> str:
         f"Top-level files: {', '.join(top_files) if top_files else 'None'}",
         f"Total top-level items: {len(children)}",
     ]
+
     return " | ".join(summary_lines)
 
 
 def _find_entry_points(file_paths: List[str]) -> List[str]:
     entry_points = []
+
     for path in file_paths:
         normalized = _normalize_path(path).lower()
+
         if any(pattern in normalized for pattern in ENTRY_POINT_PATTERNS):
             entry_points.append(path)
+
     return sorted(set(entry_points))[:20]
 
 
@@ -100,16 +95,28 @@ def _build_project_summary(codebase_data: Dict[str, Any]) -> str:
         f"Tech stack: {', '.join(tech_stack) if tech_stack else 'Unknown'}",
         f"Dependency files: {dependency_count} detected",
     ]
+
     return "; ".join(parts)
 
 
-def build_repo_context(repo_path: str, repo_id: Optional[str] = None) -> Dict[str, Any]:
+def build_repo_context(
+    repo_path: str,
+    repo_id: Optional[str] = None,
+) -> Dict[str, Any]:
+    """
+    Build repository metadata context for analysis agents.
+    """
     parser = CodebaseParser(repo_path)
     codebase_data = parser.parse()
 
     file_paths = list(parser.files.keys())
+
+    generated_repo_id = (
+        repo_id or hashlib.sha1(repo_path.encode("utf-8")).hexdigest()[:10]
+    )
+
     return {
-        "repo_id": repo_id or hashlib.sha1(repo_path.encode("utf-8")).hexdigest()[:10],
+        "repo_id": generated_repo_id,
         "project_summary": _build_project_summary(codebase_data),
         "tech_stack": codebase_data.get("tech_stack", []),
         "folder_tree": _summarize_folder_tree(codebase_data.get("file_tree", {})),
@@ -126,57 +133,4 @@ def build_repo_context(repo_path: str, repo_id: Optional[str] = None) -> Dict[st
                 len(v) for v in codebase_data.get("dependencies", {}).values()
             ),
         },
-    }
-
-
-def ingest_repository_to_qdrant(
-    repo_path: str,
-    collection_name: Optional[str] = None,
-) -> Dict[str, Any]:
-    collection_name = collection_name or QDRANT_COLLECTION
-
-    repo_context = build_repo_context(repo_path)
-    chunks = chunk_repository(repo_path)
-    if not chunks:
-        raise ValueError(f"No eligible code files found under {repo_path}.")
-
-    qdrant_client = get_qdrant_client(QDRANT_URL, QDRANT_API_KEY)
-    create_collection_if_not_exists(
-        qdrant_client,
-        collection_name=collection_name,
-        vector_size=384,
-        distance=QDRANT_DISTANCE,
-    )
-
-    texts = [chunk["content"] for chunk in chunks]
-    vectors = embed_texts(texts, model="all-MiniLM-L6-v2")
-
-    points = []
-    for chunk, vector in zip(chunks, vectors):
-        valid_uuid = str(uuid.uuid5(uuid.NAMESPACE_DNS, chunk["id"]))
-        points.append(
-            {
-                "id": valid_uuid,
-                "vector": vector,
-                "payload": {
-                    "repo_id": repo_context["repo_id"],
-                    "chunk_id": chunk["chunk_id"],
-                    "path": chunk["path"],
-                    "filename": chunk["filename"],
-                    "language": chunk["language"],
-                    "chunk_index": chunk["chunk_index"],
-                    "line_range": chunk["line_range"],
-                    "content": chunk["content"],
-                },
-            }
-        )
-
-    upsert_points(qdrant_client, collection_name=collection_name, points=points)
-
-    return {
-        "status": "success",
-        "repo_id": repo_context["repo_id"],
-        "collection_name": collection_name,
-        "ingested_points": len(points),
-        "repo_summary": repo_context["project_summary"],
     }
