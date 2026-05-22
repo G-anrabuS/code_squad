@@ -1,15 +1,12 @@
-import os
 import uuid
 from typing import Any, Dict, List, Optional
 
 from google import genai
-from app.core.config import GEMINI_API_KEY
-
 from qdrant_client.http import models as rest_models
 
 from app.core.config import (
+    GEMINI_API_KEY,
     QDRANT_API_KEY,
-    QDRANT_COLLECTION,
     QDRANT_URL,
     QDRANT_DISTANCE,
 )
@@ -31,6 +28,43 @@ MODEL_DIMENSIONS = {
 BATCH_SIZE = 32
 
 
+def generate_collection_name() -> str:
+    """
+    Generate unique temporary Qdrant collection name.
+    """
+    return f"repo_{uuid.uuid4().hex}"
+
+
+def cleanup_qdrant_collection(collection_name: str):
+    """
+    Delete temporary Qdrant collection after analysis.
+    """
+    try:
+        qdrant_client = get_qdrant_client(QDRANT_URL, QDRANT_API_KEY)
+        qdrant_client.delete_collection(collection_name=collection_name)
+    except Exception:
+        pass
+
+
+def embed_texts(
+    texts: List[str],
+    model: str = EMBEDDING_MODEL,
+) -> List[List[float]]:
+    """
+    Generate embeddings for text chunks using Gemini.
+    """
+    embeddings = []
+
+    for text in texts:
+        response = client.models.embed_content(
+            model=model,
+            contents=text,
+        )
+        embeddings.append(response.embeddings[0].values)
+
+    return embeddings
+
+
 def semantic_search(
     query: str,
     top_k: int = 5,
@@ -38,12 +72,16 @@ def semantic_search(
     model: Optional[str] = None,
     repo_id: Optional[str] = None,
 ) -> List[Dict[str, Any]]:
-    """Perform semantic search against Qdrant for the given query."""
-    collection_name = collection_name or QDRANT_COLLECTION
+    """
+    Perform semantic search against Qdrant.
+    """
+    if not collection_name:
+        raise ValueError("collection_name is required for semantic search.")
+
     model = model or EMBEDDING_MODEL
 
     response = client.models.embed_content(
-        model=EMBEDDING_MODEL,
+        model=model,
         contents=query,
     )
 
@@ -70,11 +108,11 @@ def semantic_search(
         query_filter=query_filter,
     )
 
-    hits = response.points
-
     results: List[Dict[str, Any]] = []
-    for hit in hits:
+
+    for hit in response.points:
         payload = getattr(hit, "payload", None) or {}
+
         results.append(
             {
                 "id": getattr(hit, "id", None),
@@ -86,38 +124,30 @@ def semantic_search(
     return results
 
 
-def embed_texts(texts: List[str], model: str = EMBEDDING_MODEL) -> List[List[float]]:
-    embeddings = []
-
-    for text in texts:
-        response = client.models.embed_content(
-            model=model,
-            contents=text,
-        )
-
-        embeddings.append(response.embeddings[0].values)
-
-    return embeddings
-
-
 def ingest_repository_to_qdrant(
     repo_path: str,
     collection_name: Optional[str] = None,
     model: Optional[str] = None,
+    repo_id: Optional[str] = None,
 ) -> Dict[str, object]:
-    collection_name = collection_name or QDRANT_COLLECTION
+    """
+    Chunk repository, generate embeddings, and store in Qdrant.
+    """
+    collection_name = collection_name or generate_collection_name()
     model = model or EMBEDDING_MODEL
 
+    if model not in MODEL_DIMENSIONS:
+        raise ValueError(
+            f"Unsupported embedding model. Supported: {list(MODEL_DIMENSIONS.keys())}"
+        )
+
     chunks = chunk_repository(repo_path)
+
     if not chunks:
         raise ValueError(f"No eligible code files found under {repo_path}.")
 
-    if model not in MODEL_DIMENSIONS:
-        raise ValueError("Unsupported embedding model. Use gemini-embedding-2.")
-
     qdrant_client = get_qdrant_client(QDRANT_URL, QDRANT_API_KEY)
 
-    # This will create a new collection requiring 384 dimensions
     create_collection_if_not_exists(
         qdrant_client,
         collection_name=collection_name,
@@ -126,22 +156,24 @@ def ingest_repository_to_qdrant(
     )
 
     total_points = 0
+
     for batch_start in range(0, len(chunks), BATCH_SIZE):
         batch = chunks[batch_start : batch_start + BATCH_SIZE]
+
         texts = [chunk["content"] for chunk in batch]
         vectors = embed_texts(texts, model)
 
         points = []
-        for chunk, vector in zip(batch, vectors):
 
-            # Generate a valid UUID from your string ID using uuid5
-            valid_uuid = str(uuid.uuid5(uuid.NAMESPACE_DNS, chunk["id"]))
+        for chunk, vector in zip(batch, vectors):
+            point_id = str(uuid.uuid5(uuid.NAMESPACE_DNS, chunk["id"]))
 
             points.append(
                 {
-                    "id": valid_uuid,  # <--- Use the newly generated UUID here
+                    "id": point_id,
                     "vector": vector,
                     "payload": {
+                        "repo_id": repo_id,
                         "chunk_id": chunk["chunk_id"],
                         "path": chunk["path"],
                         "filename": chunk["filename"],
@@ -153,7 +185,13 @@ def ingest_repository_to_qdrant(
                 }
             )
 
-            upsert_points(qdrant_client, collection_name=collection_name, points=points)
+        upsert_points(
+            qdrant_client,
+            collection_name=collection_name,
+            points=points,
+        )
+
+        total_points += len(points)
 
     return {
         "status": "success",
