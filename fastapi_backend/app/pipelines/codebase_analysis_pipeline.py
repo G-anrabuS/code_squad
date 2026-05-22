@@ -64,7 +64,11 @@ class CodebaseAnalysisPipeline:
 
             collection_name = ingestion_summary["collection_name"]
 
-        except Exception:
+        except Exception as e:
+            logging.exception(
+                "Detailed error during repo context preparation: %s", str(e)
+            )
+
             if progress_callback:
                 progress_callback(
                     "scan",
