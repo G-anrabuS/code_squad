@@ -1,20 +1,21 @@
 import json
 from typing import Any, Dict, List, Optional
 
-import google.generativeai as genai
+from google import genai
+from google.genai import types
 
 from app.core.config import GEMINI_API_KEY
 
 # Gemini 1.5 Flash is incredibly fast, free-tier friendly, and perfect for large contexts
-DEFAULT_MODEL = "gemini-1.5-flash"
+DEFAULT_MODEL = "gemini-3.1-flash-lite"
 
 
-def _configure_gemini() -> None:
+def _get_gemini_client() -> genai.Client:
     if not GEMINI_API_KEY:
         raise ValueError(
             "GEMINI_API_KEY is not set. Please add GEMINI_API_KEY to .env."
         )
-    genai.configure(api_key=GEMINI_API_KEY)
+    return genai.Client(api_key=GEMINI_API_KEY)
 
 
 def _extract_json_payload(text: str) -> Dict[str, Any]:
@@ -63,10 +64,10 @@ async def analyze_agent(
     agent_name: str,
     repo_context: Dict[str, Any],
     chunks: List[Dict[str, Any]],
-    model_name: Optional[str] = None,
+    model: Optional[str] = None,
 ) -> Dict[str, Any]:
-    _configure_gemini()
-    model_name = model_name or DEFAULT_MODEL
+    client = _get_gemini_client()
+    model_name = model or DEFAULT_MODEL
 
     system_instruction = (
         "You are a software analysis specialist. You MUST return a single JSON object only. "
@@ -89,17 +90,14 @@ async def analyze_agent(
         "Optionally include severity (string) and analysis_details (object)."
     )
 
-    # Initialize the Gemini model with specific generation configs
-    model = genai.GenerativeModel(
-        model_name=model_name,
-        system_instruction=system_instruction,
-        generation_config=genai.GenerationConfig(
+    response = await client.aio.models.generate_content(
+        model=model_name,
+        contents=user_prompt,
+        config=types.GenerateContentConfig(
+            system_instruction=system_instruction,
             temperature=0.2,
             response_mime_type="application/json",  # Forces Gemini to return valid JSON
         ),
     )
-
-    # Make the async call to Gemini
-    response = await model.generate_content_async(user_prompt)
 
     return _extract_json_payload(response.text)

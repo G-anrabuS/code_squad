@@ -1,18 +1,17 @@
-from os import path
-
-import openai
 from typing import Any, Dict, List, Optional
-
-from app.core.config import OPENAI_API_KEY, OPENAI_LLM_MODEL
+from google import genai
+from app.core.config import GEMINI_API_KEY
 from app.services.embedding_service import semantic_search
 
+DEFAULT_MODEL = "gemini-3.1-flash-lite"
 
-def _configure_openai() -> None:
-    if not OPENAI_API_KEY:
+
+def _get_gemini_client() -> genai.Client:
+    if not GEMINI_API_KEY:
         raise ValueError(
-            "OPENAI_API_KEY is not set. Please add OPENAI_API_KEY to .env."
+            "GEMINI_API_KEY is not set. Please add GEMINI_API_KEY to .env."
         )
-    openai.api_key = OPENAI_API_KEY
+    return genai.Client(api_key=GEMINI_API_KEY)
 
 
 def _build_chat_prompt(
@@ -50,10 +49,10 @@ async def rag_chat(
     repo_context: Dict[str, Any],
     repo_id: Optional[str] = None,
     top_k: int = 8,
-    model: Optional[str] = None,
+    model_name: Optional[str] = None,
 ) -> Dict[str, Any]:
-    _configure_openai()
-    model = model or OPENAI_LLM_MODEL
+    client = _get_gemini_client()
+    model_name = model_name or DEFAULT_MODEL
 
     chunks = semantic_search(
         query,
@@ -63,19 +62,14 @@ async def rag_chat(
 
     prompt = _build_chat_prompt(query, repo_context, chunks)
 
-    response = await openai.ChatCompletion.acreate(
-        model=model,
-        messages=[
-            {"role": "system", "content": "You are an expert developer assistant."},
-            {"role": "user", "content": prompt},
-        ],
-        temperature=0.2,
-        max_tokens=700,
+    response = await client.aio.models.generate_content(
+        model=model_name,
+        contents=prompt,
     )
 
     return {
         "query": query,
-        "answer": response.choices[0].message.content.strip(),
+        "answer": response.text.strip(),
         "retrieved_chunks": [
             {
                 "path": hit.get("payload", {}).get("path"),
