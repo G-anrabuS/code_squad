@@ -22,7 +22,7 @@ client = genai.Client(api_key=GEMINI_API_KEY)
 EMBEDDING_MODEL = "gemini-embedding-2"
 
 MODEL_DIMENSIONS = {
-    EMBEDDING_MODEL: 768,
+    EMBEDDING_MODEL: 3072,
 }
 
 BATCH_SIZE = 32
